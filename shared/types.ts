@@ -1,3 +1,5 @@
+import type { BuildingSpriteKey } from "./sprites.ts";
+
 export type ManifestEntry = {
   path: string;
   hash: string;
@@ -9,8 +11,7 @@ export type BuildingDescriptor = {
   district: string;
   tile: { x: number; y: number };
   footprint: { w: number; h: number };
-  heightTiers: number;
-  paletteIndex: number;
+  spriteKey: BuildingSpriteKey;
   hashShort: string;
   size: number;
 };

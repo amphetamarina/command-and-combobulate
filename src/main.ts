@@ -13,7 +13,7 @@ function setStatus(text: string, color: string) {
   app.appendChild(p);
 }
 
-setStatus("scanning your /usr/bin ...", "#e0e0f0");
+setStatus("scanning /proc and hashing your running binaries ...", "#e0e0f0");
 
 try {
   const world = await fetchWorld();
@@ -23,6 +23,7 @@ try {
     type: Phaser.AUTO,
     parent: "app",
     backgroundColor: "#0a0a12",
+    pixelArt: true,
     scale: {
       mode: Phaser.Scale.RESIZE,
       width: window.innerWidth,

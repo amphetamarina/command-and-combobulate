@@ -1,21 +1,19 @@
 import Phaser from "phaser";
 import type { BuildingDescriptor } from "../shared/types.ts";
-import { drawBuilding } from "./building-sprite.ts";
+import {
+  BUILDING_NAMES,
+  BUILDING_VARIANTS,
+  type BuildingSpriteKey,
+} from "../shared/sprites.ts";
 import { drawGround } from "./ground.ts";
-import { TILE_H, UNIT_HEIGHT } from "./iso.ts";
-import { buildingOutline, pointInPolygon } from "./hit-test.ts";
+import { TILE_H, tileToScreen } from "./iso.ts";
 
 const GROUND_PADDING = 2;
-const MIN_ZOOM = 0.25;
-const MAX_ZOOM = 3;
-const ZOOM_STEP = 0.1;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 4;
+const ZOOM_STEP = 0.15;
 
 type CitySceneData = { buildings: BuildingDescriptor[] };
-
-type HitEntry = {
-  descriptor: BuildingDescriptor;
-  outline: ReturnType<typeof buildingOutline>;
-};
 
 function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -23,9 +21,16 @@ function formatSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function spriteAssetUrl(key: BuildingSpriteKey): string {
+  const parts = key.split("/");
+  const name = parts[1]!;
+  const variant = parts[2]!;
+  const dir = encodeURIComponent(`Step ${variant}`);
+  return `/sci-fi-acdrnx/sci-fi/buildings/${dir}/${name}.png`;
+}
+
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
-  private hitEntries: HitEntry[] = [];
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
 
@@ -35,6 +40,15 @@ export class CityScene extends Phaser.Scene {
 
   init(data: CitySceneData) {
     this.buildings = data.buildings ?? [];
+  }
+
+  preload() {
+    for (const name of BUILDING_NAMES) {
+      for (const v of BUILDING_VARIANTS) {
+        const key: BuildingSpriteKey = `building/${name}/${v}`;
+        this.load.image(key, spriteAssetUrl(key));
+      }
+    }
   }
 
   create() {
@@ -54,25 +68,31 @@ export class CityScene extends Phaser.Scene {
     const ground = this.add.graphics();
     drawGround(ground, extentX, extentY, GROUND_PADDING);
 
-    const g = this.add.graphics();
-    for (const d of sorted) drawBuilding(g, d);
-
-    this.hitEntries = [...sorted]
-      .reverse()
-      .map((d) => ({ descriptor: d, outline: buildingOutline(d) }));
+    for (const d of sorted) {
+      const tilePos = tileToScreen(d.tile.x, d.tile.y);
+      const img = this.add.image(
+        tilePos.x,
+        tilePos.y + TILE_H,
+        d.spriteKey,
+      );
+      img.setOrigin(0.5, 1);
+      img.setDepth(d.tile.x + d.tile.y);
+      img.setInteractive({ pixelPerfect: true });
+      img.on("pointerover", () => this.showTooltip(d));
+      img.on("pointerout", () => this.hideTooltip());
+    }
 
     const maxTileSum = this.buildings.reduce(
       (m, d) =>
         Math.max(m, d.tile.x + d.footprint.w + d.tile.y + d.footprint.h),
       0,
     );
-    const cityCenterY = (maxTileSum * TILE_H) / 4 - UNIT_HEIGHT;
-    this.cameras.main.centerOn(0, cityCenterY);
+    this.cameras.main.centerOn(0, (maxTileSum * TILE_H) / 4);
 
     this.tooltip = this.createTooltip();
     this.setupPan();
     this.setupZoom();
-    this.setupHover();
+    this.setupTooltipFollow();
   }
 
   private createTooltip(): HTMLDivElement {
@@ -98,23 +118,22 @@ export class CityScene extends Phaser.Scene {
     return el;
   }
 
-  private setupHover() {
+  private showTooltip(d: BuildingDescriptor) {
+    if (this.dragging || !this.tooltip) return;
+    this.tooltip.textContent = `${d.id}\nhash:  ${d.hashShort}\nsize:  ${formatSize(d.size)}`;
+    this.tooltip.style.display = "block";
+  }
+
+  private hideTooltip() {
+    if (this.tooltip) this.tooltip.style.display = "none";
+  }
+
+  private setupTooltipFollow() {
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
-      if (this.dragging || !this.tooltip) return;
-      const world = this.cameras.main.getWorldPoint(p.x, p.y);
-      const hit = this.hitEntries.find((e) =>
-        pointInPolygon(world, e.outline),
-      );
-      if (hit) {
-        const d = hit.descriptor;
-        this.tooltip.textContent = `${d.id}\nhash:  ${d.hashShort}\nsize:  ${formatSize(d.size)}`;
-        this.tooltip.style.display = "block";
-        const rect = this.game.canvas.getBoundingClientRect();
-        this.tooltip.style.left = `${rect.left + p.x + 14}px`;
-        this.tooltip.style.top = `${rect.top + p.y + 14}px`;
-      } else {
-        this.tooltip.style.display = "none";
-      }
+      if (!this.tooltip || this.tooltip.style.display !== "block") return;
+      const rect = this.game.canvas.getBoundingClientRect();
+      this.tooltip.style.left = `${rect.left + p.x + 14}px`;
+      this.tooltip.style.top = `${rect.top + p.y + 14}px`;
     });
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tooltip?.remove();
@@ -128,7 +147,7 @@ export class CityScene extends Phaser.Scene {
       this.dragging = true;
       drag.x = p.x;
       drag.y = p.y;
-      if (this.tooltip) this.tooltip.style.display = "none";
+      this.hideTooltip();
     });
     this.input.on("pointermove", (p: Phaser.Input.Pointer) => {
       if (!this.dragging) return;

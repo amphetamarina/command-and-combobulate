@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { buildDistrict } from "./world-builder.ts";
 import type { ManifestEntry } from "../shared/types.ts";
+import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
 const hex = (seed: number) =>
   Array.from({ length: 32 }, (_, i) =>
@@ -41,14 +42,11 @@ test("tiles fill a ceil(sqrt(n))-sized grid", () => {
   expect(new Set(tileKeys).size).toBe(out.length);
 });
 
-test("heightTiers in [1,5], paletteIndex in [0,7], footprint always 1x1 in v0", () => {
+test("spriteKey is a known building sprite, footprint always 1x1 in v0", () => {
   const m = sampleManifest(50);
   const out = buildDistrict(m, { district: "/usr/bin" });
   for (const d of out) {
-    expect(d.heightTiers).toBeGreaterThanOrEqual(1);
-    expect(d.heightTiers).toBeLessThanOrEqual(5);
-    expect(d.paletteIndex).toBeGreaterThanOrEqual(0);
-    expect(d.paletteIndex).toBeLessThanOrEqual(7);
+    expect(BUILDING_SPRITE_KEYS).toContain(d.spriteKey);
     expect(d.footprint).toEqual({ w: 1, h: 1 });
   }
 });
@@ -84,8 +82,7 @@ test("same hash always produces same appearance, regardless of position", () => 
   const out2 = buildDistrict(m2, { district: "/usr/bin" });
   const a1 = out1.find((d) => d.hashShort === sameHash.slice(0, 8))!;
   const a2 = out2.find((d) => d.hashShort === sameHash.slice(0, 8))!;
-  expect(a1.heightTiers).toBe(a2.heightTiers);
-  expect(a1.paletteIndex).toBe(a2.paletteIndex);
+  expect(a1.spriteKey).toBe(a2.spriteKey);
   expect(a1.footprint).toEqual(a2.footprint);
 });
 

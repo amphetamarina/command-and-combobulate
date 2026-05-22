@@ -6,6 +6,7 @@ const CLIENT_PORT = Number(process.env.TTY_CLIENT_PORT ?? 5173);
 
 export default defineConfig({
   root: resolve(import.meta.dirname, "src"),
+  publicDir: resolve(import.meta.dirname, "assets"),
   server: {
     port: CLIENT_PORT,
     strictPort: true,

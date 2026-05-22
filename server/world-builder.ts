@@ -1,8 +1,6 @@
 import seedrandom from "seedrandom";
 import type { BuildingDescriptor, ManifestEntry } from "../shared/types.ts";
-
-const HEIGHT_TIERS = 5;
-const PALETTE_COUNT = 8;
+import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
 export type BuildOptions = {
   district: string;
@@ -20,16 +18,17 @@ export function buildDistrict(
 
   return sorted.map((entry, index) => {
     const rng = seedrandom(entry.hash);
-    const heightTiers = 1 + Math.floor(rng() * HEIGHT_TIERS);
-    const paletteIndex = Math.floor(rng() * PALETTE_COUNT);
+    const spriteKey =
+      BUILDING_SPRITE_KEYS[
+        Math.floor(rng() * BUILDING_SPRITE_KEYS.length)
+      ]!;
 
     return {
       id: entry.path,
       district: options.district,
       tile: { x: index % gridSize, y: Math.floor(index / gridSize) },
       footprint: { w: 1, h: 1 },
-      heightTiers,
-      paletteIndex,
+      spriteKey,
       hashShort: entry.hash.slice(0, 8),
       size: entry.size,
     };
