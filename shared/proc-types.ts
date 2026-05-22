@@ -1,3 +1,5 @@
+import type { BuildingDescriptor } from "./types.ts";
+
 export type ProcessSnapshot = {
   pid: number;
   exe: string;
@@ -8,3 +10,14 @@ export type ProcsResponse = {
   capturedAt: number;
   processes: ProcessSnapshot[];
 };
+
+export type LiveMessage =
+  | {
+      kind: "procs";
+      capturedAt: number;
+      processes: ProcessSnapshot[];
+    }
+  | {
+      kind: "world-delta";
+      buildings: BuildingDescriptor[];
+    };

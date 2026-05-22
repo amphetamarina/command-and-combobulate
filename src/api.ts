@@ -21,3 +21,12 @@ export async function fetchProcs(): Promise<ProcsResponse> {
   }
   return (await res.json()) as ProcsResponse;
 }
+
+const DEFAULT_API_PORT = 3001;
+
+export function liveSocketUrl(): string {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const port = location.port === "5173" ? DEFAULT_API_PORT : location.port;
+  const host = port ? `${location.hostname}:${port}` : location.hostname;
+  return `${proto}://${host}/live`;
+}

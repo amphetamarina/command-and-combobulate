@@ -1,12 +1,12 @@
 import Phaser from "phaser";
 import type { BuildingDescriptor } from "../shared/types.ts";
-import type { ProcessSnapshot } from "../shared/proc-types.ts";
+import type { LiveMessage, ProcessSnapshot } from "../shared/proc-types.ts";
 import {
   BUILDING_NAMES,
   BUILDING_VARIANTS,
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
-import { fetchProcs, fetchWorld } from "./api.ts";
+import { liveSocketUrl } from "./api.ts";
 import { drawGround } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
@@ -21,7 +21,7 @@ const GROUND_PADDING = 4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
-const PROC_POLL_MS = 2000;
+const WS_RECONNECT_MS = 2000;
 const WANDER_MIN_MS = 1500;
 const WANDER_MAX_MS = 3500;
 const WANDER_STAGGER_MS = 2000;
@@ -115,7 +115,7 @@ export class CityScene extends Phaser.Scene {
     this.setupPan();
     this.setupZoom();
     this.setupTooltipFollow();
-    this.startProcPolling();
+    this.startLiveSocket();
   }
 
   private redrawGround() {
@@ -159,45 +159,42 @@ export class CityScene extends Phaser.Scene {
     this.redrawGround();
   }
 
-  private async refreshWorld() {
-    try {
-      const world = await fetchWorld();
-      for (const d of world.buildings) {
-        this.addBuilding(d);
-      }
-    } catch (err) {
-      console.warn(`[scene] /world refresh failed: ${(err as Error).message}`);
-    }
-  }
-
-  private startProcPolling() {
+  private startLiveSocket() {
     let lastCount = -1;
-    const tick = async () => {
-      try {
-        const snap = await fetchProcs();
-        const unknownExe = snap.processes.some(
-          (p) => !this.buildingByExe.has(p.exe),
-        );
-        if (unknownExe) {
-          await this.refreshWorld();
+    const connect = () => {
+      const ws = new WebSocket(liveSocketUrl());
+      ws.addEventListener("message", (ev) => {
+        let msg: LiveMessage;
+        try {
+          msg = JSON.parse(ev.data) as LiveMessage;
+        } catch (err) {
+          console.warn(`[ws] bad message: ${(err as Error).message}`);
+          return;
         }
-        this.updateNpcs(snap.processes);
-        if (snap.processes.length !== lastCount) {
-          console.log(
-            `[scene] /procs: ${snap.processes.length} processes, ${this.npcs.size} npcs on screen`,
-          );
-          lastCount = snap.processes.length;
+        if (msg.kind === "procs") {
+          this.updateNpcs(msg.processes);
+          if (msg.processes.length !== lastCount) {
+            console.log(
+              `[ws] procs: ${msg.processes.length} processes, ${this.npcs.size} npcs on screen`,
+            );
+            lastCount = msg.processes.length;
+          }
+        } else if (msg.kind === "world-delta") {
+          for (const d of msg.buildings) {
+            this.addBuilding(d);
+          }
+          console.log(`[ws] +${msg.buildings.length} new building(s)`);
         }
-      } catch (err) {
-        console.warn(`[scene] proc poll failed: ${(err as Error).message}`);
-      }
+      });
+      ws.addEventListener("close", () => {
+        console.warn(`[ws] disconnected, retrying in ${WS_RECONNECT_MS}ms`);
+        this.time.delayedCall(WS_RECONNECT_MS, connect);
+      });
+      ws.addEventListener("error", () => {
+        ws.close();
+      });
     };
-    void tick();
-    this.time.addEvent({
-      delay: PROC_POLL_MS,
-      loop: true,
-      callback: tick,
-    });
+    connect();
   }
 
   updateNpcs(processes: ProcessSnapshot[]) {
