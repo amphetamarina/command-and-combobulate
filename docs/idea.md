@@ -1,4 +1,4 @@
-# tty-space-station: the idea
+# isotop: the idea
 
 ## Vision
 

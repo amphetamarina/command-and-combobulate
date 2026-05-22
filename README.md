@@ -1,6 +1,7 @@
-# tty-space-station
+# isotop
 
-An isometric 2D rendering of your live Unix environment.
+`top`, but isometric. An isometric 2D rendering of your live Unix
+environment.
 
 This repository contains the **v0 prototype**: a deterministic, snapshot
 view of the binaries that are running on your machine right now,
