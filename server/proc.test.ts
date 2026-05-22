@@ -2,7 +2,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, writeFile, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getRunningBinaryPaths } from "./proc.ts";
+import { getRunningBinaryPaths, getRunningProcesses } from "./proc.ts";
 
 const root = join(tmpdir(), `tty-proc-test-${process.pid}-${Date.now()}`);
 const procPath = join(root, "proc");
@@ -17,12 +17,15 @@ beforeAll(async () => {
 
   await mkdir(join(procPath, "100"));
   await symlink(binA, join(procPath, "100", "exe"));
+  await writeFile(join(procPath, "100", "comm"), "binA-runner\n");
 
   await mkdir(join(procPath, "200"));
   await symlink(binB, join(procPath, "200", "exe"));
+  await writeFile(join(procPath, "200", "comm"), "binB-runner\n");
 
   await mkdir(join(procPath, "300"));
   await symlink(binA, join(procPath, "300", "exe"));
+  await writeFile(join(procPath, "300", "comm"), "binA-other\n");
 
   await mkdir(join(procPath, "400"));
 
@@ -71,4 +74,33 @@ test("paths are sorted", async () => {
 test("returns empty list when proc path does not exist", async () => {
   const paths = await getRunningBinaryPaths(join(root, "nope"));
   expect(paths).toEqual([]);
+});
+
+test("getRunningProcesses returns one snapshot per pid with exe and comm", async () => {
+  const procs = await getRunningProcesses(procPath);
+  const pids = procs.map((p) => p.pid).sort((a, b) => a - b);
+  expect(pids).toEqual([100, 200, 300, 500]);
+  const byPid = Object.fromEntries(procs.map((p) => [p.pid, p]));
+  expect(byPid[100]?.exe).toBe(binA);
+  expect(byPid[100]?.comm).toBe("binA-runner");
+  expect(byPid[200]?.exe).toBe(binB);
+  expect(byPid[200]?.comm).toBe("binB-runner");
+});
+
+test("getRunningProcesses keeps duplicate exes (one entry per pid)", async () => {
+  const procs = await getRunningProcesses(procPath);
+  const aRuns = procs.filter((p) => p.exe === binA);
+  expect(aRuns.map((p) => p.pid).sort((a, b) => a - b)).toEqual([100, 300, 500]);
+});
+
+test("getRunningProcesses falls back to exe basename if comm is missing", async () => {
+  const procs = await getRunningProcesses(procPath);
+  const pid500 = procs.find((p) => p.pid === 500);
+  expect(pid500?.comm).toBe("binA");
+});
+
+test("getRunningProcesses results are sorted by pid", async () => {
+  const procs = await getRunningProcesses(procPath);
+  const pids = procs.map((p) => p.pid);
+  expect([...pids].sort((a, b) => a - b)).toEqual(pids);
 });

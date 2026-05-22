@@ -13,6 +13,7 @@ export default defineConfig({
     proxy: {
       "/world": `http://localhost:${API_PORT}`,
       "/health": `http://localhost:${API_PORT}`,
+      "/procs": `http://localhost:${API_PORT}`,
     },
   },
   resolve: {

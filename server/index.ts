@@ -1,6 +1,6 @@
 import { scanPaths } from "./scanner.ts";
 import { buildDistrict } from "./world-builder.ts";
-import { getRunningBinaryPaths } from "./proc.ts";
+import { getRunningBinaryPaths, getRunningProcesses } from "./proc.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const DISTRICT = "running";
@@ -24,6 +24,14 @@ const server = Bun.serve({
         `[world] ${paths.length} unique exes -> ${buildings.length} buildings in ${elapsedMs}ms`,
       );
       return Response.json({ district: DISTRICT, buildings });
+    }
+
+    if (url.pathname === "/procs") {
+      const processes = await getRunningProcesses();
+      return Response.json({
+        capturedAt: Date.now(),
+        processes,
+      });
     }
 
     return new Response("not found", { status: 404 });
