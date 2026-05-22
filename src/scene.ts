@@ -16,7 +16,7 @@ import {
   type NpcSpriteKey,
 } from "./npc.ts";
 
-const GROUND_PADDING = 2;
+const GROUND_PADDING = 4;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;

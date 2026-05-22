@@ -1,9 +1,9 @@
 import type Phaser from "phaser";
 import { tileToScreen } from "./iso.ts";
 
-const TILE_COLOR_A = 0x1a1a28;
-const TILE_COLOR_B = 0x14141e;
-const TILE_STROKE = 0x24243a;
+const TILE_COLOR_A = 0x171724;
+const TILE_COLOR_B = 0x121219;
+const TILE_STROKE = 0x222236;
 
 export function drawGround(
   g: Phaser.GameObjects.Graphics,
@@ -16,7 +16,7 @@ export function drawGround(
   const x1 = extentX + padding;
   const y1 = extentY + padding;
 
-  g.lineStyle(1, TILE_STROKE, 0.6);
+  g.lineStyle(1, TILE_STROKE, 1);
 
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
