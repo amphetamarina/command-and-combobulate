@@ -1,8 +1,9 @@
-import { scanDirectory } from "./scanner.ts";
+import { scanPaths } from "./scanner.ts";
 import { buildDistrict } from "./world-builder.ts";
+import { getRunningBinaryPaths } from "./proc.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
-const TARGET = process.env.TTY_TARGET ?? "/usr/bin";
+const DISTRICT = "running";
 
 const server = Bun.serve({
   port: PORT,
@@ -15,13 +16,14 @@ const server = Bun.serve({
 
     if (url.pathname === "/world") {
       const started = performance.now();
-      const manifest = await scanDirectory(TARGET);
-      const buildings = buildDistrict(manifest, { district: TARGET });
+      const paths = await getRunningBinaryPaths();
+      const manifest = await scanPaths(paths);
+      const buildings = buildDistrict(manifest, { district: DISTRICT });
       const elapsedMs = Math.round(performance.now() - started);
       console.log(
-        `[world] ${TARGET}: ${buildings.length} buildings in ${elapsedMs}ms`,
+        `[world] ${paths.length} unique exes -> ${buildings.length} buildings in ${elapsedMs}ms`,
       );
-      return Response.json({ district: TARGET, buildings });
+      return Response.json({ district: DISTRICT, buildings });
     }
 
     return new Response("not found", { status: 404 });
@@ -29,4 +31,4 @@ const server = Bun.serve({
 });
 
 console.log(`[server] listening on http://localhost:${server.port}`);
-console.log(`[server] target district: ${TARGET}`);
+console.log(`[server] district: ${DISTRICT} (universe = currently running binaries)`);
