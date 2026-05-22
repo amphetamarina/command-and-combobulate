@@ -1,7 +1,10 @@
 import Phaser from "phaser";
 import type { BuildingDescriptor } from "../shared/types.ts";
 import { drawBuilding } from "./building-sprite.ts";
+import { drawGround } from "./ground.ts";
 import { TILE_H, UNIT_HEIGHT } from "./iso.ts";
+
+const GROUND_PADDING = 2;
 
 type CitySceneData = { buildings: BuildingDescriptor[] };
 
@@ -24,6 +27,18 @@ export class CityScene extends Phaser.Scene {
     const sorted = [...this.buildings].sort(
       (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
     );
+
+    const extentX = this.buildings.reduce(
+      (m, d) => Math.max(m, d.tile.x + d.footprint.w),
+      1,
+    );
+    const extentY = this.buildings.reduce(
+      (m, d) => Math.max(m, d.tile.y + d.footprint.h),
+      1,
+    );
+
+    const ground = this.add.graphics();
+    drawGround(ground, extentX, extentY, GROUND_PADDING);
 
     const g = this.add.graphics();
     for (const d of sorted) drawBuilding(g, d);
