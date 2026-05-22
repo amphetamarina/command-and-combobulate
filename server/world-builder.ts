@@ -2,6 +2,8 @@ import seedrandom from "seedrandom";
 import type { BuildingDescriptor, ManifestEntry } from "../shared/types.ts";
 import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
+export const TILE_SPACING = 2;
+
 export type BuildOptions = {
   district: string;
 };
@@ -26,7 +28,10 @@ export function buildDistrict(
     return {
       id: entry.path,
       district: options.district,
-      tile: { x: index % gridSize, y: Math.floor(index / gridSize) },
+      tile: {
+        x: (index % gridSize) * TILE_SPACING,
+        y: Math.floor(index / gridSize) * TILE_SPACING,
+      },
       footprint: { w: 1, h: 1 },
       spriteKey,
       hashShort: entry.hash.slice(0, 8),

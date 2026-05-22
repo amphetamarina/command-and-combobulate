@@ -27,19 +27,29 @@ test("descriptor ids match manifest paths", () => {
   expect(out.map((d) => d.id)).toEqual(m.map((e) => e.path));
 });
 
-test("tiles fill a ceil(sqrt(n))-sized grid", () => {
+test("tiles are unique and fit in a sparse spaced grid", () => {
   const m = sampleManifest(10);
   const out = buildDistrict(m, { district: "/usr/bin" });
-  const n = Math.ceil(Math.sqrt(10));
-  expect(n).toBe(4);
   for (const d of out) {
     expect(d.tile.x).toBeGreaterThanOrEqual(0);
-    expect(d.tile.x).toBeLessThan(n);
     expect(d.tile.y).toBeGreaterThanOrEqual(0);
-    expect(d.tile.y).toBeLessThan(n);
   }
   const tileKeys = out.map((d) => `${d.tile.x},${d.tile.y}`);
   expect(new Set(tileKeys).size).toBe(out.length);
+});
+
+test("buildings have at least one walkable tile between any two of them", () => {
+  const m = sampleManifest(16);
+  const out = buildDistrict(m, { district: "/usr/bin" });
+  for (let i = 0; i < out.length; i++) {
+    for (let j = i + 1; j < out.length; j++) {
+      const a = out[i]!.tile;
+      const b = out[j]!.tile;
+      const dx = Math.abs(a.x - b.x);
+      const dy = Math.abs(a.y - b.y);
+      expect(Math.max(dx, dy)).toBeGreaterThanOrEqual(2);
+    }
+  }
 });
 
 test("spriteKey is a known building sprite, footprint always 1x1 in v0", () => {
