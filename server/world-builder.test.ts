@@ -118,3 +118,38 @@ test("output is stable when input is presented in a different order", () => {
     Object.fromEntries(arr.map((d) => [d.id, d]));
   expect(byId(out1)).toEqual(byId(out2));
 });
+
+test("placement cache keeps existing buildings on the same tile when new ones are added", () => {
+  const cache = new Map<string, number>();
+  const first = sampleManifest(5);
+  const out1 = buildDistrict(first, { district: "/usr/bin" }, cache);
+
+  const second = [
+    ...first,
+    { path: "/usr/bin/zzz-new", hash: "ff".repeat(32), size: 99 },
+  ];
+  const out2 = buildDistrict(second, { district: "/usr/bin" }, cache);
+
+  const out1ById = new Map(out1.map((d) => [d.id, d.tile]));
+  for (const d of out2) {
+    const prev = out1ById.get(d.id);
+    if (prev) {
+      expect(d.tile).toEqual(prev);
+    }
+  }
+});
+
+test("placement cache assigns new buildings to the next free slot", () => {
+  const cache = new Map<string, number>();
+  buildDistrict(sampleManifest(3), { district: "/usr/bin" }, cache);
+  expect(Math.max(...cache.values())).toBe(2);
+  buildDistrict(
+    [
+      ...sampleManifest(3),
+      { path: "/usr/bin/zzz-new", hash: "ee".repeat(32), size: 1 },
+    ],
+    { district: "/usr/bin" },
+    cache,
+  );
+  expect(cache.get("/usr/bin/zzz-new")).toBe(3);
+});

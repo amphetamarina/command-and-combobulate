@@ -6,7 +6,7 @@ import {
   BUILDING_VARIANTS,
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
-import { fetchProcs } from "./api.ts";
+import { fetchProcs, fetchWorld } from "./api.ts";
 import { drawGround } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
@@ -58,6 +58,7 @@ export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
+  private groundGraphics: Phaser.GameObjects.Graphics | null = null;
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
 
@@ -96,26 +97,11 @@ export class CityScene extends Phaser.Scene {
       1,
     );
 
-    const ground = this.add.graphics();
-    drawGround(
-      ground,
-      Math.ceil(extentX),
-      Math.ceil(extentY),
-      GROUND_PADDING,
-    );
+    this.groundGraphics = this.add.graphics();
+    this.redrawGround();
 
     for (const d of sorted) {
-      const tilePos = tileToScreen(d.tile.x, d.tile.y);
-      const img = this.add.image(
-        tilePos.x,
-        tilePos.y + TILE_H,
-        d.spriteKey,
-      );
-      img.setOrigin(0.5, 1);
-      img.setDepth(d.tile.x + d.tile.y);
-      img.setInteractive({ pixelPerfect: true });
-      img.on("pointerover", () => this.showBuildingTooltip(d));
-      img.on("pointerout", () => this.hideTooltip());
+      this.placeBuildingSprite(d);
     }
 
     const maxTileSum = this.buildings.reduce(
@@ -132,11 +118,69 @@ export class CityScene extends Phaser.Scene {
     this.startProcPolling();
   }
 
+  private redrawGround() {
+    if (!this.groundGraphics) return;
+    const extentX = this.buildings.reduce(
+      (m, d) => Math.max(m, d.tile.x + d.footprint.w),
+      1,
+    );
+    const extentY = this.buildings.reduce(
+      (m, d) => Math.max(m, d.tile.y + d.footprint.h),
+      1,
+    );
+    this.groundGraphics.clear();
+    drawGround(
+      this.groundGraphics,
+      Math.ceil(extentX),
+      Math.ceil(extentY),
+      GROUND_PADDING,
+    );
+  }
+
+  private placeBuildingSprite(d: BuildingDescriptor) {
+    const tilePos = tileToScreen(d.tile.x, d.tile.y);
+    const img = this.add.image(
+      tilePos.x,
+      tilePos.y + TILE_H,
+      d.spriteKey,
+    );
+    img.setOrigin(0.5, 1);
+    img.setDepth(d.tile.x + d.tile.y);
+    img.setInteractive({ pixelPerfect: true });
+    img.on("pointerover", () => this.showBuildingTooltip(d));
+    img.on("pointerout", () => this.hideTooltip());
+  }
+
+  private addBuilding(d: BuildingDescriptor) {
+    if (this.buildingByExe.has(d.id)) return;
+    this.buildings.push(d);
+    this.buildingByExe.set(d.id, d);
+    this.placeBuildingSprite(d);
+    this.redrawGround();
+  }
+
+  private async refreshWorld() {
+    try {
+      const world = await fetchWorld();
+      for (const d of world.buildings) {
+        this.addBuilding(d);
+      }
+    } catch (err) {
+      console.warn(`[scene] /world refresh failed: ${(err as Error).message}`);
+    }
+  }
+
   private startProcPolling() {
     let lastCount = -1;
     const tick = async () => {
       try {
         const snap = await fetchProcs();
+        const unknownExe = snap.processes.some(
+          (p) => !this.buildingByExe.has(p.exe),
+        );
+        if (unknownExe) {
+          await this.refreshWorld();
+        }
         this.updateNpcs(snap.processes);
         if (snap.processes.length !== lastCount) {
           console.log(
