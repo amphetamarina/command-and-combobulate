@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { tileToScreen } from "./iso.ts";
+import { TILE_H, tileToScreen } from "./iso.ts";
 
 // One consistent straight variant reads as a continuous wall; cycling all of
 // them looked like random rubble. Swap WALL_VARIANT to taste (1-12, not 7).
@@ -21,8 +21,11 @@ export function wallAssetUrl(index: number): string {
 // only be confirmed from a render, so they live here.
 const ORIGIN_X = 0.25;
 const ORIGIN_Y = 0.98;
-const STEP = 2;
+const STEP = 1;
 const DEPTH_BIAS = -0.5;
+// Walls anchor at the tile's south point (like buildings) so they rest on the
+// ground instead of floating at the tile's top corner.
+const BASE_DY = TILE_H;
 
 const FLIP_NW = false; // back-left edge (x = x0)
 const FLIP_NE = true; // back-right edge (y = y0)
@@ -51,7 +54,7 @@ export function placeWalls(
     const s = tileToScreen(tx, ty);
     walls.push(
       scene.add
-        .image(s.x, s.y, `wall/${WALL_VARIANT}`)
+        .image(s.x, s.y + BASE_DY, `wall/${WALL_VARIANT}`)
         .setOrigin(ORIGIN_X, ORIGIN_Y)
         .setFlipX(flipX)
         .setDepth(tx + ty + DEPTH_BIAS),
@@ -62,7 +65,7 @@ export function placeWalls(
     const s = tileToScreen(tx, ty);
     walls.push(
       scene.add
-        .image(s.x, s.y, `wall/${CORNER_VARIANT}`)
+        .image(s.x, s.y + BASE_DY, `wall/${CORNER_VARIANT}`)
         .setOrigin(ORIGIN_X, ORIGIN_Y)
         .setFlipX(c.flipX)
         .setFlipY(c.flipY)
