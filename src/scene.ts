@@ -20,6 +20,7 @@ import {
 } from "./npc.ts";
 
 const GROUND_PADDING = 4;
+const DESERT_MARGIN = 10;
 const REGION_DEPTH = -10;
 const GROUND_DEPTH = -20;
 const LABEL_DEPTH = 100000;
@@ -111,14 +112,18 @@ function npcAssetUrl(key: NpcSpriteKey): string {
   return `/isotop-assets/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
 }
 
-const FLOOR_KEYS = Array.from(
+const STATION_KEYS = Array.from(
   { length: FLOOR_COUNT },
-  (_, i) => `floor/${i + 1}`,
+  (_, i) => `floor/station/${i + 1}`,
+);
+const DESERT_KEYS = Array.from(
+  { length: FLOOR_COUNT },
+  (_, i) => `floor/desert/${i + 1}`,
 );
 
-function floorAssetUrl(index: number): string {
+function terrainAssetUrl(kind: "station" | "desert", index: number): string {
   const n = index.toString().padStart(2, "0");
-  return `/isotop-assets/sci-fi/terrain/station/floor-${n}.png`;
+  return `/isotop-assets/sci-fi/terrain/${kind}/floor-${n}.png`;
 }
 
 export class CityScene extends Phaser.Scene {
@@ -161,8 +166,9 @@ export class CityScene extends Phaser.Scene {
     for (const key of NPC_VARIANT_KEYS) {
       this.load.image(key, npcAssetUrl(key));
     }
-    for (let i = 0; i < FLOOR_KEYS.length; i++) {
-      this.load.image(FLOOR_KEYS[i]!, floorAssetUrl(i + 1));
+    for (let i = 0; i < FLOOR_COUNT; i++) {
+      this.load.image(STATION_KEYS[i]!, terrainAssetUrl("station", i + 1));
+      this.load.image(DESERT_KEYS[i]!, terrainAssetUrl("desert", i + 1));
     }
     for (let i = 0; i < WALL_KEYS.length; i++) {
       this.load.image(WALL_KEYS[i]!, wallAssetUrl(i + 1));
@@ -289,14 +295,35 @@ export class CityScene extends Phaser.Scene {
     for (const t of this.floorTiles) t.destroy();
     for (const w of this.wallSprites) w.destroy();
     const extent = this.worldExtent();
-    this.floorTiles = buildGroundTiles(
-      this,
-      FLOOR_KEYS,
-      extent.x,
-      extent.y,
-      GROUND_PADDING,
-      GROUND_DEPTH,
-    );
+
+    const buildingPads = new Set<string>();
+    for (const b of this.buildings) {
+      const cx = Math.round(b.tile.x);
+      const cy = Math.round(b.tile.y);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          buildingPads.add(`${cx + dx},${cy + dy}`);
+        }
+      }
+    }
+    const regions = this.regions.map((r) => ({
+      x0: r.origin.x,
+      y0: r.origin.y,
+      x1: r.origin.x + r.size.w,
+      y1: r.origin.y + r.size.h,
+    }));
+
+    this.floorTiles = buildGroundTiles(this, {
+      stationFloors: STATION_KEYS,
+      desertFloors: DESERT_KEYS,
+      buildingPads,
+      regions,
+      extentX: extent.x,
+      extentY: extent.y,
+      padding: GROUND_PADDING,
+      desertMargin: DESERT_MARGIN,
+      depth: GROUND_DEPTH,
+    });
     this.wallSprites = placeWalls(this, extent.x, extent.y, GROUND_PADDING);
   }
 
