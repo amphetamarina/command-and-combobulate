@@ -65,6 +65,11 @@ appear when previously-unseen executables start running.
   fills the panel below with its pid, CPU, memory, current file
   activity, and exe, plus a KILL button (two-step confirm) that sends
   SIGTERM to the process.
+- **Build real terminals.** The sidebar's BUILD section spawns a real
+  shell (a genuine PTY) as a terminal building on the map. Click the
+  building to open its xterm.js window — draggable, minimizable,
+  expandable, and switchable across multiple sessions. Closing a window
+  kills its shell.
 - **Hover for details.** Hovering a building shows its full path,
   hash prefix, and size on disk. Hovering an NPC shows its PID,
   comm name, live CPU and memory, and exe.
@@ -103,6 +108,9 @@ appear when previously-unseen executables start running.
   working directory.
 - **v1.5** (shipped): RTS sidebar with a schematic minimap, mech
   selection, a live process inspector, and a kill button.
+- **v1.6** (shipped): textured station floor (role-based tiles) ringed
+  by an irregular desert, station wall border, and buildable terminal
+  buildings backed by real PTY shells in draggable xterm.js windows.
 
 ## What isotop deliberately is not yet
 
