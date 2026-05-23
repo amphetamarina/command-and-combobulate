@@ -27,19 +27,20 @@ const DEPTH_BIAS = -0.5;
 // ground instead of floating at the tile's top corner.
 const BASE_DY = TILE_H;
 
-// A straight sprite's base rises to the right, so it fits edges whose uphill
-// run goes right (NW, SE) unflipped, and edges whose uphill run goes left
-// (NE, SW) mirrored.
-const FLIP_NW = false; // back-left edge (x = x0), uphill goes right
-const FLIP_NE = true; // back-right edge (y = y0), uphill goes left
-const FLIP_SE = false; // front-right edge (x = x1), uphill goes right
-const FLIP_SW = true; // front-left edge (y = y1), uphill goes left
+// The diamond's four edges are reflections of each other: crossing the
+// vertical axis mirrors X, crossing the horizontal axis mirrors Y. The back
+// edges (NW, NE) sit unflipped/X-flipped; the front edges (SE, SW) are their
+// Y-mirror, so they also need flipY — same pattern the corners use.
+type Flip = { flipX: boolean; flipY: boolean };
+const EDGE_NW: Flip = { flipX: false, flipY: false }; // back-left  (x = x0)
+const EDGE_NE: Flip = { flipX: true, flipY: false }; //  back-right (y = y0)
+const EDGE_SE: Flip = { flipX: true, flipY: true }; //   front-right (x = x1)
+const EDGE_SW: Flip = { flipX: false, flipY: true }; //  front-left (y = y1)
 
-type Corner = { flipX: boolean; flipY: boolean };
-const CORNER_N: Corner = { flipX: false, flipY: false };
-const CORNER_E: Corner = { flipX: true, flipY: false };
-const CORNER_S: Corner = { flipX: true, flipY: true };
-const CORNER_W: Corner = { flipX: false, flipY: true };
+const CORNER_N: Flip = { flipX: false, flipY: false };
+const CORNER_E: Flip = { flipX: true, flipY: false };
+const CORNER_S: Flip = { flipX: true, flipY: true };
+const CORNER_W: Flip = { flipX: false, flipY: true };
 
 export function placeWalls(
   scene: Phaser.Scene,
@@ -53,33 +54,26 @@ export function placeWalls(
   const y1 = extentY + padding - 1;
   const walls: Phaser.GameObjects.Image[] = [];
 
-  const straight = (tx: number, ty: number, flipX: boolean) => {
+  const place = (tx: number, ty: number, key: string, flip: Flip) => {
     const s = tileToScreen(tx, ty);
     walls.push(
       scene.add
-        .image(s.x, s.y + BASE_DY, `wall/${WALL_VARIANT}`)
+        .image(s.x, s.y + BASE_DY, key)
         .setOrigin(ORIGIN_X, ORIGIN_Y)
-        .setFlipX(flipX)
+        .setFlipX(flip.flipX)
+        .setFlipY(flip.flipY)
         .setDepth(tx + ty + DEPTH_BIAS),
     );
   };
+  const straight = (tx: number, ty: number, flip: Flip) =>
+    place(tx, ty, `wall/${WALL_VARIANT}`, flip);
+  const corner = (tx: number, ty: number, flip: Flip) =>
+    place(tx, ty, `wall/${CORNER_VARIANT}`, flip);
 
-  const corner = (tx: number, ty: number, c: Corner) => {
-    const s = tileToScreen(tx, ty);
-    walls.push(
-      scene.add
-        .image(s.x, s.y + BASE_DY, `wall/${CORNER_VARIANT}`)
-        .setOrigin(ORIGIN_X, ORIGIN_Y)
-        .setFlipX(c.flipX)
-        .setFlipY(c.flipY)
-        .setDepth(tx + ty + DEPTH_BIAS),
-    );
-  };
-
-  for (let y = y0; y <= y1; y += STEP) straight(x0, y, FLIP_NW);
-  for (let x = x0; x <= x1; x += STEP) straight(x, y0, FLIP_NE);
-  for (let y = y0; y <= y1; y += STEP) straight(x1, y, FLIP_SE);
-  for (let x = x0; x <= x1; x += STEP) straight(x, y1, FLIP_SW);
+  for (let y = y0; y <= y1; y += STEP) straight(x0, y, EDGE_NW);
+  for (let x = x0; x <= x1; x += STEP) straight(x, y0, EDGE_NE);
+  for (let y = y0; y <= y1; y += STEP) straight(x1, y, EDGE_SE);
+  for (let x = x0; x <= x1; x += STEP) straight(x, y1, EDGE_SW);
 
   corner(x0, y0, CORNER_N);
   corner(x1, y0, CORNER_E);
