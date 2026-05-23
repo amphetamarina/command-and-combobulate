@@ -31,7 +31,10 @@ try {
     },
   });
 
-  game.scene.add("city", CityScene, true, { buildings: world.buildings });
+  game.scene.add("city", CityScene, true, {
+    buildings: world.buildings,
+    regions: world.regions,
+  });
 
   console.log(
     `[client] rendering ${world.buildings.length} buildings across ${world.regions.length} regions`,

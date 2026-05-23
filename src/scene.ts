@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { BuildingDescriptor } from "../shared/types.ts";
+import type { BuildingDescriptor, Region } from "../shared/types.ts";
 import type { LiveMessage, ProcessSnapshot } from "../shared/proc-types.ts";
 import {
   BUILDING_NAMES,
@@ -18,6 +18,10 @@ import {
 } from "./npc.ts";
 
 const GROUND_PADDING = 4;
+const REGION_DEPTH = -10;
+const GROUND_DEPTH = -20;
+const LABEL_DEPTH = 100000;
+const REGION_TINT_ALPHA = 0.22;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
@@ -32,12 +36,25 @@ type NpcState = {
   currentTile: { x: number; y: number };
 };
 
-type CitySceneData = { buildings: BuildingDescriptor[] };
+type CitySceneData = { buildings: BuildingDescriptor[]; regions: Region[] };
 
 function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatRegionLabel(path: string): string {
+  const home = path.replace(/^\/home\/[^/]+/, "~").replace(/^\/root/, "~");
+  return home.length > 40 ? `…${home.slice(-39)}` : home;
+}
+
+function labelColor(tint: number): string {
+  const mix = (channel: number) => Math.round(channel + (255 - channel) * 0.55);
+  const r = mix((tint >> 16) & 0xff);
+  const g = mix((tint >> 8) & 0xff);
+  const b = mix(tint & 0xff);
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
 function buildingAssetUrl(key: BuildingSpriteKey): string {
@@ -56,9 +73,12 @@ function npcAssetUrl(key: NpcSpriteKey): string {
 
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
+  private regions: Region[] = [];
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
   private groundGraphics: Phaser.GameObjects.Graphics | null = null;
+  private regionGraphics: Phaser.GameObjects.Graphics | null = null;
+  private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
 
@@ -68,6 +88,7 @@ export class CityScene extends Phaser.Scene {
 
   init(data: CitySceneData) {
     this.buildings = data.buildings ?? [];
+    this.regions = data.regions ?? [];
     this.buildingByExe = new Map(this.buildings.map((b) => [b.id, b]));
   }
 
@@ -88,17 +109,10 @@ export class CityScene extends Phaser.Scene {
       (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
     );
 
-    const extentX = this.buildings.reduce(
-      (m, d) => Math.max(m, d.tile.x + d.footprint.w),
-      1,
-    );
-    const extentY = this.buildings.reduce(
-      (m, d) => Math.max(m, d.tile.y + d.footprint.h),
-      1,
-    );
-
-    this.groundGraphics = this.add.graphics();
+    this.groundGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
+    this.regionGraphics = this.add.graphics().setDepth(REGION_DEPTH);
     this.redrawGround();
+    this.renderRegions();
 
     for (const d of sorted) {
       this.placeBuildingSprite(d);
@@ -118,23 +132,62 @@ export class CityScene extends Phaser.Scene {
     this.startLiveSocket();
   }
 
+  private worldExtent(): { x: number; y: number } {
+    let x = 1;
+    let y = 1;
+    for (const d of this.buildings) {
+      x = Math.max(x, d.tile.x + d.footprint.w);
+      y = Math.max(y, d.tile.y + d.footprint.h);
+    }
+    for (const r of this.regions) {
+      x = Math.max(x, r.origin.x + r.size.w);
+      y = Math.max(y, r.origin.y + r.size.h);
+    }
+    return { x: Math.ceil(x), y: Math.ceil(y) };
+  }
+
   private redrawGround() {
     if (!this.groundGraphics) return;
-    const extentX = this.buildings.reduce(
-      (m, d) => Math.max(m, d.tile.x + d.footprint.w),
-      1,
-    );
-    const extentY = this.buildings.reduce(
-      (m, d) => Math.max(m, d.tile.y + d.footprint.h),
-      1,
-    );
+    const extent = this.worldExtent();
     this.groundGraphics.clear();
-    drawGround(
-      this.groundGraphics,
-      Math.ceil(extentX),
-      Math.ceil(extentY),
-      GROUND_PADDING,
-    );
+    drawGround(this.groundGraphics, extent.x, extent.y, GROUND_PADDING);
+  }
+
+  private renderRegions() {
+    if (!this.regionGraphics) return;
+    this.regionGraphics.clear();
+    for (const label of this.regionLabels) label.destroy();
+    this.regionLabels = [];
+
+    for (const r of this.regions) {
+      this.regionGraphics.fillStyle(r.tint, REGION_TINT_ALPHA);
+      for (let y = r.origin.y; y < r.origin.y + r.size.h; y++) {
+        for (let x = r.origin.x; x < r.origin.x + r.size.w; x++) {
+          const N = tileToScreen(x, y);
+          const E = tileToScreen(x + 1, y);
+          const S = tileToScreen(x + 1, y + 1);
+          const W = tileToScreen(x, y + 1);
+          this.regionGraphics.beginPath();
+          this.regionGraphics.moveTo(N.x, N.y);
+          this.regionGraphics.lineTo(E.x, E.y);
+          this.regionGraphics.lineTo(S.x, S.y);
+          this.regionGraphics.lineTo(W.x, W.y);
+          this.regionGraphics.closePath();
+          this.regionGraphics.fillPath();
+        }
+      }
+
+      const corner = tileToScreen(r.origin.x, r.origin.y);
+      const label = this.add
+        .text(corner.x, corner.y - 6, formatRegionLabel(r.path), {
+          fontFamily: "ui-monospace, monospace",
+          fontSize: "13px",
+          color: labelColor(r.tint),
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(LABEL_DEPTH);
+      this.regionLabels.push(label);
+    }
   }
 
   private placeBuildingSprite(d: BuildingDescriptor) {
@@ -183,7 +236,12 @@ export class CityScene extends Phaser.Scene {
           for (const d of msg.buildings) {
             this.addBuilding(d);
           }
-          console.log(`[ws] +${msg.buildings.length} new building(s)`);
+          this.regions = msg.regions;
+          this.renderRegions();
+          this.redrawGround();
+          console.log(
+            `[ws] +${msg.buildings.length} new building(s), ${msg.regions.length} regions`,
+          );
         }
       });
       ws.addEventListener("close", () => {
