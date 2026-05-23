@@ -11,13 +11,27 @@ export type MinimapRegion = {
   work: boolean;
 };
 
-export type MinimapData = {
-  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+export type MinimapBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+export type MinimapStatic = {
+  bounds: MinimapBounds;
   regions: MinimapRegion[];
   buildings: { x: number; y: number }[];
-  npcs: { x: number; y: number; selected: boolean; working: boolean }[];
-  view: { x: number; y: number; w: number; h: number };
 };
+
+export type MinimapNpc = {
+  x: number;
+  y: number;
+  selected: boolean;
+  working: boolean;
+};
+
+export type MinimapView = { x: number; y: number; w: number; h: number };
 
 export type SelectionInfo = {
   pid: number;
@@ -65,7 +79,11 @@ export class Sidebar {
   private selectedPid: number | null = null;
   private confirming = false;
   private confirmTimer: number | null = null;
-  private lastData: MinimapData | null = null;
+  private staticLayer: HTMLCanvasElement;
+  private bounds: MinimapBounds = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+  private scale = 1;
+  private offX = 0;
+  private offY = 0;
 
   constructor(private opts: SidebarOptions) {
     const root = document.createElement("div");
@@ -104,6 +122,9 @@ export class Sidebar {
       "cursor:crosshair",
     ].join(";");
     this.ctx = this.canvas.getContext("2d")!;
+    this.staticLayer = document.createElement("canvas");
+    this.staticLayer.width = MINIMAP_SIZE;
+    this.staticLayer.height = MINIMAP_SIZE;
     this.canvas.addEventListener("pointerdown", (e) => this.onMinimapClick(e));
 
     const buildSection = document.createElement("div");
@@ -227,70 +248,73 @@ export class Sidebar {
     }
   }
 
+  private px(x: number): number {
+    return (x - this.bounds.minX) * this.scale + this.offX;
+  }
+
+  private py(y: number): number {
+    return (y - this.bounds.minY) * this.scale + this.offY;
+  }
+
   private onMinimapClick(e: PointerEvent) {
-    if (!this.lastData) return;
     const rect = this.canvas.getBoundingClientRect();
     const mx = ((e.clientX - rect.left) / rect.width) * MINIMAP_SIZE;
     const my = ((e.clientY - rect.top) / rect.height) * MINIMAP_SIZE;
-    const { bounds } = this.lastData;
-    const span = this.fit(bounds);
-    const worldX = (mx - span.offX) / span.scale + bounds.minX;
-    const worldY = (my - span.offY) / span.scale + bounds.minY;
+    const worldX = (mx - this.offX) / this.scale + this.bounds.minX;
+    const worldY = (my - this.offY) / this.scale + this.bounds.minY;
     this.opts.onNavigate(worldX, worldY);
   }
 
-  private fit(bounds: MinimapData["bounds"]) {
-    const w = Math.max(1, bounds.maxX - bounds.minX);
-    const h = Math.max(1, bounds.maxY - bounds.minY);
+  setMinimapStatic(s: MinimapStatic) {
+    this.bounds = s.bounds;
+    const w = Math.max(1, s.bounds.maxX - s.bounds.minX);
+    const h = Math.max(1, s.bounds.maxY - s.bounds.minY);
     const usable = MINIMAP_SIZE - 8;
-    const scale = Math.min(usable / w, usable / h);
-    const offX = (MINIMAP_SIZE - w * scale) / 2;
-    const offY = (MINIMAP_SIZE - h * scale) / 2;
-    return { scale, offX, offY };
-  }
+    this.scale = Math.min(usable / w, usable / h);
+    this.offX = (MINIMAP_SIZE - w * this.scale) / 2;
+    this.offY = (MINIMAP_SIZE - h * this.scale) / 2;
 
-  drawMinimap(data: MinimapData) {
-    this.lastData = data;
-    const { ctx } = this;
-    const { bounds } = data;
-    const { scale, offX, offY } = this.fit(bounds);
-    const px = (x: number) => (x - bounds.minX) * scale + offX;
-    const py = (y: number) => (y - bounds.minY) * scale + offY;
-
+    const ctx = this.staticLayer.getContext("2d")!;
     ctx.clearRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
     ctx.fillStyle = "#0a0a12";
     ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
 
-    for (const r of data.regions) {
+    for (const r of s.regions) {
       ctx.fillStyle = hex(r.tint);
       ctx.globalAlpha = r.work ? 0.4 : 0.55;
-      ctx.fillRect(px(r.x), py(r.y), r.w * scale, r.h * scale);
+      ctx.fillRect(this.px(r.x), this.py(r.y), r.w * this.scale, r.h * this.scale);
       ctx.globalAlpha = 1;
       if (r.work) {
         ctx.strokeStyle = "#7fe0d0";
         ctx.lineWidth = 1;
-        ctx.strokeRect(px(r.x), py(r.y), r.w * scale, r.h * scale);
+        ctx.strokeRect(this.px(r.x), this.py(r.y), r.w * this.scale, r.h * this.scale);
       }
     }
 
     ctx.fillStyle = "#b9b9d0";
-    for (const b of data.buildings) {
-      ctx.fillRect(px(b.x) - 1, py(b.y) - 1, 2, 2);
+    for (const b of s.buildings) {
+      ctx.fillRect(this.px(b.x) - 1, this.py(b.y) - 1, 2, 2);
     }
+  }
 
-    for (const n of data.npcs) {
+  drawMinimap(npcs: MinimapNpc[], view: MinimapView) {
+    const { ctx } = this;
+    ctx.clearRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+    ctx.drawImage(this.staticLayer, 0, 0);
+
+    for (const n of npcs) {
       ctx.fillStyle = n.selected ? "#7fff7f" : n.working ? "#ffae5a" : "#6bb6ff";
       const s = n.selected ? 3 : 2;
-      ctx.fillRect(px(n.x) - s / 2, py(n.y) - s / 2, s, s);
+      ctx.fillRect(this.px(n.x) - s / 2, this.py(n.y) - s / 2, s, s);
     }
 
     ctx.strokeStyle = "rgba(255,255,255,0.8)";
     ctx.lineWidth = 1;
     ctx.strokeRect(
-      px(data.view.x),
-      py(data.view.y),
-      data.view.w * scale,
-      data.view.h * scale,
+      this.px(view.x),
+      this.py(view.y),
+      view.w * this.scale,
+      view.h * this.scale,
     );
   }
 

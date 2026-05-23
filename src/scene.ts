@@ -8,7 +8,7 @@ import {
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
 import { killProcess, liveSocketUrl } from "./api.ts";
-import { Sidebar, type MinimapData } from "./sidebar.ts";
+import { Sidebar, type MinimapStatic } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
 import { paintGround, FLOOR_COUNT } from "./ground.ts";
 import { placeWalls, WALL_KEYS, wallAssetUrl } from "./walls.ts";
@@ -152,10 +152,7 @@ export class CityScene extends Phaser.Scene {
   private termCount = 0;
   private selectedPid: number | null = null;
   private selectionMarker: Phaser.GameObjects.Ellipse | null = null;
-  private minimapStatic: Pick<
-    MinimapData,
-    "bounds" | "regions" | "buildings"
-  > | null = null;
+  private minimapReady = false;
 
   constructor() {
     super("city");
@@ -232,7 +229,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   override update() {
-    if (!this.sidebar || !this.minimapStatic) return;
+    if (!this.sidebar || !this.minimapReady) return;
     const view = this.cameras.main.worldView;
     const npcs = [...this.npcs.entries()].map(([pid, s]) => ({
       x: s.container.x,
@@ -240,10 +237,11 @@ export class CityScene extends Phaser.Scene {
       selected: pid === this.selectedPid,
       working: s.busy,
     }));
-    this.sidebar.drawMinimap({
-      ...this.minimapStatic,
-      npcs,
-      view: { x: view.x, y: view.y, w: view.width, h: view.height },
+    this.sidebar.drawMinimap(npcs, {
+      x: view.x,
+      y: view.y,
+      w: view.width,
+      h: view.height,
     });
   }
 
@@ -293,11 +291,13 @@ export class CityScene extends Phaser.Scene {
       maxX = 100;
       maxY = 100;
     }
-    this.minimapStatic = {
+    const staticData: MinimapStatic = {
       bounds: { minX, minY, maxX, maxY },
       regions,
       buildings,
     };
+    this.sidebar?.setMinimapStatic(staticData);
+    this.minimapReady = true;
   }
 
   private worldExtent(): { x: number; y: number } {
@@ -438,7 +438,8 @@ export class CityScene extends Phaser.Scene {
     this.buildings.push(d);
     this.buildingByExe.set(d.id, d);
     this.placeBuildingSprite(d);
-    this.redrawGround();
+    // Ground is redrawn once by the world-delta handler after all buildings
+    // are added, not per building.
   }
 
   private startLiveSocket() {
