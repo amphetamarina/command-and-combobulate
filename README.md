@@ -52,7 +52,10 @@ appear when previously-unseen executables start running.
   writing a file (its file offset advances between samples), the
   touched directory appears as a building-less work region and the
   mech walks over to it, shows a read/write badge, works briefly,
-  and walks back. Idle held-open files do not count.
+  and walks back. Idle held-open files do not count. Work regions are
+  drawn distinctly from binary neighbourhoods (fainter fill, an
+  outlined perimeter, an italic teal label) and fade away once the
+  folder has seen no activity for ~15s.
 - **Hover for details.** Hovering a building shows its full path,
   hash prefix, and size on disk. Hovering an NPC shows its PID,
   comm name, live CPU and memory, and exe.
