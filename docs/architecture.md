@@ -1,102 +1,96 @@
-# Architecture sketch
+# Architecture
 
-This is a working sketch, not a final design. It exists to make the v0 spec
-concrete and to flag the moving parts that will need decisions later.
-
-## High-level shape
+isotop is split so the backend is the only thing that touches the OS and
+the frontend is the only thing that draws. Each can be replaced
+independently (e.g. swap Phaser for Pixi without rewriting the samplers).
 
 ```
-       +----------------------------+
-       |   Filesystem & /proc       |   <-- the real machine
-       +-------------+--------------+
-                     |
-                     | (read-only)
-                     v
-       +----------------------------+
-       |   Bun server (backend)     |
-       |                            |
-       |   - Scanner: walks $PATH,  |
-       |     hashes binaries        |
-       |   - Watcher: polls /proc   |
-       |     for processes & pipes  |
-       |   - Seeded world builder   |
-       +-------------+--------------+
-                     |
-       REST (static) | WebSocket (dynamic)
-                     v
-       +----------------------------+
-       |   Browser (frontend)       |
-       |                            |
-       |   - Phaser 3 isometric     |
-       |     renderer               |
-       |   - World state store      |
-       |   - Input / camera         |
-       +----------------------------+
+   Filesystem & /proc            (the real machine)
+            |  read-only
+            v
+   Bun server (backend)
+     - scanner: hashes running binaries
+     - ProcSampler: per-process CPU and memory from /proc
+     - FileActivitySampler: which file/folder a process is reading or writing
+     - world builder: deterministic regions + buildings
+     - TerminalManager: real PTY shells
+            |
+   HTTP (snapshot)  +  WebSocket (live world, processes, terminal I/O)
+            v
+   Browser (Vite + Phaser 3)
+     - isometric scene: ground, walls, buildings, mech NPCs
+     - sidebar: minimap, process inspector, terminal windows
+     - camera / input
 ```
 
-The split is on purpose: the backend is the only thing that touches the OS,
-and the frontend is the only thing that draws. Each can be replaced
-independently (e.g., swap Phaser for Pixi without rewriting the scanner).
+## Backend (Bun)
 
-## Component responsibilities
+- **Scanner** (`server/scanner.ts`): SHA-256s each running binary into a
+  `ManifestEntry`. Input to the world build.
+- **World builder** (`server/world-builder.ts`): a pure function of the
+  manifest (no I/O during build). Groups binaries by parent directory
+  into regions, and places regions and the buildings within them on
+  square grids via a fixed shell slot-mapping, so the map stays square.
+  A `PlacementCache` keeps positions stable as binaries and directories
+  appear, and reclaims slots when work regions expire. Work directories
+  (folders a process is touching but with no binary) become building-less
+  regions.
+- **ProcSampler** (`server/proc.ts`): reads `/proc/<pid>` for exe, comm,
+  RSS, and CPU jiffies; reports CPU as a share of one core between ticks
+  and memory as a fraction of total RAM.
+- **FileActivitySampler** (`server/activity.ts`): diffs each open file's
+  offset in `/proc/<pid>/fdinfo` between ticks to find the file a process
+  is actively reading or writing. Falls back to the process's `cwd` when
+  it does bursty I/O with no long-lived handle (editors, agents).
+- **TerminalManager** (`server/terminals.ts`): spawns a real PTY per
+  session via `script -qfc "exec $SHELL -i" /dev/null` (no native addon),
+  buffers recent output, and bridges it to WebSocket clients.
 
-### Backend (Bun)
+### HTTP / WebSocket surface (`server/index.ts`)
 
-- **Scanner**: enumerates targeted directories (starting with `/usr/bin`),
-  computes a stable content hash per file, returns a structured manifest.
-  This is the input to the deterministic world build.
-- **World builder**: takes the manifest plus a seed strategy (see below) and
-  emits a world description: regions, buildings, positions, visual
-  parameters. Pure function of its inputs. No I/O during build. Buildings
-  group by parent directory into regions; regions and the buildings within
-  them are placed on square grids via a fixed shell slot-mapping, so the
-  map stays square and a placement cache keeps positions stable as new
-  binaries and directories appear.
-- **Live watcher**: polls `/proc` on an interval, diffs against last snapshot,
-  pushes process and pipe events over a WebSocket.
-- **HTTP/WS surface**: `GET /world` for the static description, `WS /live`
-  for the dynamic stream. Versioned from day one.
+- `GET /world` — one-shot world snapshot (regions + buildings).
+- `GET /procs`, `POST /kill` — process snapshot, signal a pid.
+- `POST /term/new`, `POST /term/kill`, `WS /term?id=` — terminal lifecycle
+  and byte stream.
+- `WS /live` — pushes `procs` (snapshots with CPU/mem/activity) every tick
+  and `world-delta` (new buildings, current regions) when the world
+  changes.
 
-### Frontend (Phaser 3 + Vite)
+## Frontend (Phaser 3 + Vite)
 
-- **Scene: City** — owns the isometric tilemap and building sprites.
-- **Renderer adapters** — translate world-builder output into Phaser
-  GameObjects. Adapters are the only Phaser-aware code; the rest is plain TS.
-- **Live overlay** — consumes WS events and spawns/despawns NPC sprites and
-  cargo robots without touching the static layer.
-- **Camera/input** — pan, zoom, click-to-inspect.
+- **CityScene** (`src/scene.ts`) owns the isometric scene and consumes the
+  WebSocket. `iso.ts` is the projection; `ground.ts` paints the floor and
+  desert via blitters; `walls.ts` rings the platform; `npc.ts` places the
+  mechs; `sidebar.ts` is the HUD (minimap, inspector, build); `terminals.ts`
+  drives the xterm.js windows.
+- The static world layer is append-mostly: deltas add buildings and
+  re-render regions without disturbing what is already placed.
 
-## Determinism strategy
+## Determinism
 
-A single utility, `seed(input: string) -> PRNG`, is the only source of
-randomness in the world builder. Every visual decision pulls from a PRNG
-seeded by a documented input:
+The world builder's only randomness comes from `seedrandom`, seeded by a
+documented input — never `Math.random()`:
 
-- Building geometry: `seed(sha256(binary_contents))`
-- District street layout: `seed(directory_absolute_path)`
-- Player-home style: `seed(username + hostname)`
+- Building sprite + sub-tile offset: `seed(sha256(binary_contents))`
+  (overridden by a name match for known tools).
+- Region tint: `seed(directory_path)`.
 
-Forbidden: `Math.random()` anywhere in the world builder. Lint rule will
-enforce this once we have CI.
-
-## Data shapes (sketch, not final)
+## Data shapes
 
 ```ts
 type BuildingDescriptor = {
   id: string;            // stable, e.g. "/usr/bin/grep"
-  district: string;      // parent directory, e.g. "/usr/bin"
+  district: string;      // parent directory
   tile: { x: number; y: number };
   footprint: { w: number; h: number };
-  heightTiers: number;
-  palette: string;       // resolved from hash
-  hashShort: string;     // first 8 hex chars, shown on hover
+  spriteKey: string;     // building/<name>/<variant> or tool/<name>
+  hashShort: string;
+  size: number;
 };
 
-// One per distinct directory. Buildings whose `district` equals
-// `path` belong to this region. `origin`/`size` are tile coordinates;
-// `tint` is seeded by the directory path.
 type Region = {
   path: string;
+  kind: "bin" | "work";
   origin: { x: number; y: number };
   size: { w: number; h: number };
   tint: number;
@@ -104,38 +98,19 @@ type Region = {
 
 type World = { buildings: BuildingDescriptor[]; regions: Region[] };
 
-type LiveEvent =
-  | { kind: "process_spawn"; pid: number; ppid: number; comm: string; cwd: string }
-  | { kind: "process_exit"; pid: number }
-  | { kind: "pipe_active"; producerPid: number; consumerPid: number; bytesPerSec: number }
-  | { kind: "pipe_idle"; producerPid: number; consumerPid: number };
+type ProcessSnapshot = {
+  pid: number; exe: string; comm: string;
+  cpu: number; mem: number;                 // 0..1
+  activity: { path: string; dir: string; direction: "read" | "write" } | null;
+};
 ```
 
-These will change. The point of writing them now is to make the v0 build
-forced to commit to *some* shape so we can iterate against it.
+## Not yet decided / deferred
 
-## Decisions deferred
-
-These are flagged here so they are not silently made during v0:
-
-- **Tile pixel size and projection ratio** (affects every asset).
-- **Asset pipeline**: hand-drawn sprites vs. generated geometry vs. mixed.
-- **Pipe detection method**: parsing `/proc/*/fd` symlinks is the obvious
-  path but has edge cases (anonymous pipes vs. named, FIFOs, sockets).
-  Needs a spike of its own.
-- **Persistence**: do we cache the static world description on disk to
-  avoid rehashing every binary on startup? Probably yes, keyed by package
-  manager state, but not in v0.
-- **Packaging**: web-only via `bun --hot`, or Tauri wrapper for a real
-  desktop app. Defer until aesthetic is validated.
-
-## Why this shape
-
-- The backend/frontend split makes the `/proc`-reading half of the system
-  testable without a browser, and the rendering half mockable without a
-  real machine.
-- WebSocket for live state, REST for static state, because they have
-  genuinely different lifecycles and mixing them on one channel makes both
-  harder to reason about.
-- Phaser is the renderer, not the architecture. If the aesthetic in v0
-  disappoints, the backend survives a swap to Pixi or Godot's HTML export.
+- **Persistence**: the world layout and placement cache live in process
+  memory, so a restart reshuffles positions. Caching to disk (keyed by
+  package-manager state) is the obvious next step.
+- **Pipes between processes**: `/proc/<pid>/fd` socket/pipe inodes could
+  link producers and consumers, but detection is its own spike.
+- **Packaging**: web-only via `bun run dev` today; a Tauri wrapper is a
+  possible later path.

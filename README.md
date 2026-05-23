@@ -1,158 +1,77 @@
 # isotop
 
-`top`, but isometric. A live, isometric pixel-art rendering of your
-Unix environment: every running binary is a building, grouped into a
-neighbourhood for the directory it lives in, and every running process
-is a mech NPC standing on the street next to its building.
+`top`, but isometric. A live pixel-art rendering of your Unix machine:
+every running binary is a building, grouped into a neighbourhood for the
+directory it lives in, and every process is a mech standing by it — on a
+walled station floating in the desert.
 
 ## Quick start
 
 ```sh
-mise install     # installs bun
+mise install   # installs bun
 bun install
 bun run dev
 ```
 
-Then open <http://localhost:5173>.
-
-The first page load triggers a scan of `/proc` and a SHA-256 of each
-unique exe found there (a few seconds). After that, the page opens a
-WebSocket to the Bun API on port 3001 and live updates stream in:
-NPCs appear and disappear as processes spawn and exit, new buildings
-appear when previously-unseen executables start running.
+Open <http://localhost:5173>. The first load scans `/proc`, hashes the
+running binaries, then streams live updates over a WebSocket.
 
 ## What you see
 
-- **Buildings = tools.** Each pixel-art building is one binary that
-  has at least one running process using it as its executable image.
-  The silhouette and colour variant are deterministically derived
-  from the SHA-256 of the binary's contents, so the same binary on
-  the same machine always looks the same.
-- **Regions = directories.** Buildings are grouped by the directory
-  their binary lives in (`/usr/bin`, `/usr/local/bin`,
-  `~/.vscode-server/bin/<hash>`, ...). Each directory is a tinted
-  zone on the ground labelled with its path. The tint is seeded by
-  the directory path, so a folder keeps its colour. Regions are laid
-  out on a square meta-grid and each region's buildings fill a square
-  cluster, so the whole map stays roughly square no matter how many
-  binaries are running. A new zone appears the moment a process from
-  a never-before-seen directory starts.
-- **Streets between buildings.** Tiles are placed on a sparse grid
-  so every building has walkable street tiles around it, with wider
-  gutters between regions.
-- **NPCs = processes.** One small mech per PID, standing on a
-  cardinal-neighbour street tile of its building. Mech colour is a
-  deterministic function of the PID. NPCs appear when a process
-  spawns and disappear within ~2s of it exiting.
-- **Labels and usage bars.** Each mech carries its process name and
-  two always-on bars: CPU (green/amber/red, full at one saturated
-  core) and memory (blue, full at 20% of total RAM). The bars update
-  every tick from live `/proc` samples.
-- **Mechs work on folders.** When a process is actively reading or
-  writing a file (its file offset advances between samples), the
-  touched directory appears as a building-less work region and the
-  mech walks over to it, shows a read/write badge, works briefly,
-  and walks back. Idle held-open files do not count. Work regions are
-  drawn distinctly from binary neighbourhoods (fainter fill, an
-  outlined perimeter, an italic teal label) and fade away once the
-  folder has seen no activity for ~15s. Processes that do bursty I/O
-  without a long-lived file handle (editors, agents that open, write,
-  and close within a tick) are surfaced via their working directory
-  instead, so they walk to the folder they are working in.
-- **Sidebar and minimap.** A Command-and-Conquer-style panel on the
-  right shows a schematic minimap (regions, buildings, mechs, and the
-  camera viewport; click to recenter). Clicking a mech selects it and
-  fills the panel below with its pid, CPU, memory, current file
-  activity, and exe, plus a KILL button (two-step confirm) that sends
-  SIGTERM to the process.
-- **Build real terminals.** The sidebar's BUILD section spawns a real
-  shell (a genuine PTY) as a terminal building on the map. Click the
-  building to open its xterm.js window — draggable, minimizable,
-  expandable, and switchable across multiple sessions. Closing a window
-  kills its shell.
-- **Hover for details.** Hovering a building shows its full path,
-  hash prefix, and size on disk. Hovering an NPC shows its PID,
-  comm name, live CPU and memory, and exe.
+- **Buildings = binaries.** One per unique running executable; its shape
+  and colour are derived from the SHA-256 of its contents, so it looks
+  the same every time. Common tools (node, bun, claude, …) get dedicated
+  art.
+- **Regions = directories.** Buildings group into directory-tinted,
+  labelled zones laid out on a square grid; new zones appear as new
+  directories show up.
+- **Mechs = processes.** One per PID, wandering by its building, labelled
+  with its name and live CPU/memory bars. When a process actively reads
+  or writes a folder, its mech walks there and the folder appears as a
+  temporary work zone that fades when it goes idle.
+- **The station.** A textured floor — metal pads under buildings, plain
+  streets, tinted folder zones — walled at its perimeter and ringed by an
+  irregular desert.
+- **Sidebar (C&C-style).** A minimap (click to jump the camera), a
+  process inspector with a KILL button when you select a mech, and a
+  BUILD button.
+- **Terminals.** Build a terminal and a real PTY shell opens in a
+  draggable xterm.js window. Multiple sessions are listed in the sidebar
+  and reconnect after a page reload.
 
 ## Controls
 
-- **Pan**: click and drag.
-- **Zoom**: mouse wheel.
-- **Select a mech**: click it; details and a kill button appear in the
-  sidebar.
-- **Jump the camera**: click anywhere on the minimap.
+Pan: drag · Zoom: wheel · Select a mech: click · Jump the camera: click
+the minimap · Hover a building or mech for details.
 
-## Status
+## Architecture
 
-- **v0** (shipped): static city of buildings keyed by SHA-256.
-- **v1** (shipped): live NPC layer.
-- **v1.1** (shipped): custom Tiberian-Sun-style sprite pack
-  (`assets/isotop-assets/`), darker solid ground, organic sub-tile
-  offsets so the layout looks less rigid, NPCs wander between
-  street tiles via Phaser tweens (no walk animation yet), world
-  auto-updates when a new exe starts running, WebSocket push
-  replaces HTTP polling.
-- **v1.2** (shipped): buildings are grouped into folder regions on a
-  square map. Each directory is a directory-tinted, labelled zone;
-  regions and the buildings within them are placed on square grids
-  via a shell slot-mapping, with an adaptive grid stride that keeps
-  neighbourhoods packed close together.
-- **v1.3** (shipped): per-process CPU and memory sampled from `/proc`,
-  shown as always-on name labels and RTS-style usage bars above each
-  mech.
-- **v1.4** (shipped): active file I/O detected from
-  `/proc/<pid>/fdinfo` offset deltas; touched directories become work
-  regions and mechs walk to the folder they are reading or writing.
-  Work regions are styled distinctly and expire after ~15s idle, and
-  bursty I/O with no long-lived handle is attributed to the process's
-  working directory.
-- **v1.5** (shipped): RTS sidebar with a schematic minimap, mech
-  selection, a live process inspector, and a kill button.
-- **v1.6** (shipped): textured station floor (role-based tiles) ringed
-  by an irregular desert, station wall border, and buildable terminal
-  buildings backed by real PTY shells in draggable xterm.js windows.
-
-## What isotop deliberately is not yet
-
-- NPCs slide rather than walk. The pack ships walk-cycle frames
-  in 8 directions; v2 will use them.
-- The WebSocket connects directly to the Bun API port (3001) in
-  dev because Vite's WS proxy is unreliable here. In a deployed
-  single-port setup it would proxy normally.
-- No persistence: the placement cache lives in process memory, so
-  restarting the server reshuffles building positions on next
-  page load.
-- The pack's ground tileset is unused; the procedural dark
-  diamond floor in `src/ground.ts` pairs better with the cool
-  sprite palette than the pack's warmer terrain tiles would.
-
-See `docs/v0-spec.md` for the original scope statement; `docs/idea.md`
-and `docs/architecture.md` for the broader design.
-
-## Project layout
+A Bun backend reads `/proc`, hashes binaries, builds a deterministic
+world, and streams the world, process snapshots, and terminal I/O over
+WebSocket. A Vite + Phaser 3 frontend renders the isometric scene. See
+[`docs/architecture.md`](docs/architecture.md).
 
 ```
-assets/      - vendored CC0 sprite pack (acdrnx)
-docs/        - vision, architecture sketch, v0 spec
-server/      - Bun backend: /proc reader, hasher, world builder, /world + /procs
-shared/      - types shared between server and client
-src/         - Vite + Phaser 3 frontend (scene, npcs, iso projection)
-scripts/     - dev orchestrator (spawns server + vite)
-mise.toml    - pins bun
+server/   Bun backend: /proc + CPU/mem + file-activity sampling,
+          world builder, PTY terminals, HTTP + WebSocket
+shared/   types shared by server and client
+src/      Vite + Phaser 3 frontend: scene, ground, walls, npcs,
+          sidebar/minimap, terminals
+assets/   vendored sprite pack
+docs/     vision, architecture, original v0 spec
 ```
 
 ## Scripts
 
 ```sh
-bun run dev         # backend + frontend on localhost:5173
+bun run dev         # backend + frontend on :5173
 bun run typecheck   # tsc --noEmit
-bun test            # bun's built-in test runner
-bun run build       # vite production build into dist/
+bun test            # test runner
+bun run build       # production build into dist/
 ```
 
-## Read next
+## Not yet
 
-- [`docs/idea.md`](docs/idea.md) - the broader vision
-- [`docs/architecture.md`](docs/architecture.md) - architecture sketch
-- [`docs/v0-spec.md`](docs/v0-spec.md) - what v0 was scoped to
-- [`assets/sci-fi-acdrnx/LICENSE.md`](assets/sci-fi-acdrnx/LICENSE.md) - asset pack provenance
+- Mechs slide rather than walk (the pack ships 8-direction walk frames).
+- The world layout lives in memory, so restarting the server reshuffles
+  positions on the next load.
