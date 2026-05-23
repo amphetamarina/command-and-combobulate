@@ -22,6 +22,7 @@ const REGION_DEPTH = -10;
 const GROUND_DEPTH = -20;
 const LABEL_DEPTH = 100000;
 const REGION_TINT_ALPHA = 0.22;
+const WORK_LABEL_COLOR = "#7fe0d0";
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
@@ -77,12 +78,21 @@ function cpuBarColor(cpu: number): number {
   return 0xe05a4a;
 }
 
-function labelColor(tint: number): string {
-  const mix = (channel: number) => Math.round(channel + (255 - channel) * 0.55);
+function brightenTint(tint: number, amount: number): number {
+  const mix = (channel: number) =>
+    Math.round(channel + (255 - channel) * amount);
   const r = mix((tint >> 16) & 0xff);
   const g = mix((tint >> 8) & 0xff);
   const b = mix(tint & 0xff);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+  return (r << 16) | (g << 8) | b;
+}
+
+function hexColor(value: number): string {
+  return `#${value.toString(16).padStart(6, "0")}`;
+}
+
+function labelColor(tint: number): string {
+  return hexColor(brightenTint(tint, 0.55));
 }
 
 function buildingAssetUrl(key: BuildingSpriteKey): string {
@@ -190,29 +200,52 @@ export class CityScene extends Phaser.Scene {
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
 
     for (const r of this.regions) {
-      this.regionGraphics.fillStyle(r.tint, REGION_TINT_ALPHA);
+      const isWork = r.kind === "work";
+      const g = this.regionGraphics;
+      g.fillStyle(r.tint, isWork ? REGION_TINT_ALPHA * 0.6 : REGION_TINT_ALPHA);
       for (let y = r.origin.y; y < r.origin.y + r.size.h; y++) {
         for (let x = r.origin.x; x < r.origin.x + r.size.w; x++) {
           const N = tileToScreen(x, y);
           const E = tileToScreen(x + 1, y);
           const S = tileToScreen(x + 1, y + 1);
           const W = tileToScreen(x, y + 1);
-          this.regionGraphics.beginPath();
-          this.regionGraphics.moveTo(N.x, N.y);
-          this.regionGraphics.lineTo(E.x, E.y);
-          this.regionGraphics.lineTo(S.x, S.y);
-          this.regionGraphics.lineTo(W.x, W.y);
-          this.regionGraphics.closePath();
-          this.regionGraphics.fillPath();
+          g.beginPath();
+          g.moveTo(N.x, N.y);
+          g.lineTo(E.x, E.y);
+          g.lineTo(S.x, S.y);
+          g.lineTo(W.x, W.y);
+          g.closePath();
+          g.fillPath();
         }
       }
 
+      if (isWork) {
+        const ox = r.origin.x;
+        const oy = r.origin.y;
+        const top = tileToScreen(ox, oy);
+        const right = tileToScreen(ox + r.size.w, oy);
+        const bottom = tileToScreen(ox + r.size.w, oy + r.size.h);
+        const leftPt = tileToScreen(ox, oy + r.size.h);
+        g.lineStyle(2, brightenTint(r.tint, 0.5), 0.85);
+        g.beginPath();
+        g.moveTo(top.x, top.y);
+        g.lineTo(right.x, right.y);
+        g.lineTo(bottom.x, bottom.y);
+        g.lineTo(leftPt.x, leftPt.y);
+        g.closePath();
+        g.strokePath();
+      }
+
       const corner = tileToScreen(r.origin.x, r.origin.y);
+      const text = isWork
+        ? `◈ ${formatRegionLabel(r.path)}`
+        : formatRegionLabel(r.path);
       const label = this.add
-        .text(corner.x, corner.y - 6, formatRegionLabel(r.path), {
+        .text(corner.x, corner.y - 6, text, {
           fontFamily: "ui-monospace, monospace",
           fontSize: "13px",
-          color: labelColor(r.tint),
+          color: isWork ? WORK_LABEL_COLOR : labelColor(r.tint),
+          fontStyle: isWork ? "italic" : "normal",
         })
         .setOrigin(0.5, 1)
         .setDepth(LABEL_DEPTH);
