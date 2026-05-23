@@ -48,6 +48,11 @@ appear when previously-unseen executables start running.
   two always-on bars: CPU (green/amber/red, full at one saturated
   core) and memory (blue, full at 20% of total RAM). The bars update
   every tick from live `/proc` samples.
+- **Mechs work on folders.** When a process is actively reading or
+  writing a file (its file offset advances between samples), the
+  touched directory appears as a building-less work region and the
+  mech walks over to it, shows a read/write badge, works briefly,
+  and walks back. Idle held-open files do not count.
 - **Hover for details.** Hovering a building shows its full path,
   hash prefix, and size on disk. Hovering an NPC shows its PID,
   comm name, live CPU and memory, and exe.
@@ -75,6 +80,9 @@ appear when previously-unseen executables start running.
 - **v1.3** (shipped): per-process CPU and memory sampled from `/proc`,
   shown as always-on name labels and RTS-style usage bars above each
   mech.
+- **v1.4** (shipped): active file I/O detected from
+  `/proc/<pid>/fdinfo` offset deltas; touched directories become work
+  regions and mechs walk to the folder they are reading or writing.
 
 ## What isotop deliberately is not yet
 
