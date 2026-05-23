@@ -1,5 +1,11 @@
 import { test, expect } from "bun:test";
-import { buildDistrict } from "./world-builder.ts";
+import { dirname } from "node:path";
+import {
+  buildWorld,
+  emptyCache,
+  squareCell,
+  REGION_CELL_TILES,
+} from "./world-builder.ts";
 import type { ManifestEntry } from "../shared/types.ts";
 import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
@@ -8,39 +14,119 @@ const hex = (seed: number) =>
     ((seed * 31 + i) & 0xff).toString(16).padStart(2, "0"),
   ).join("");
 
-const sampleManifest = (count: number): ManifestEntry[] =>
+const sampleManifest = (count: number, dir = "/usr/bin"): ManifestEntry[] =>
   Array.from({ length: count }, (_, i) => ({
-    path: `/usr/bin/tool-${i.toString().padStart(3, "0")}`,
+    path: `${dir}/tool-${i.toString().padStart(3, "0")}`,
     hash: hex(i + 1),
     size: 1024 + i,
   }));
 
+test("squareCell fills a near-square footprint for any count", () => {
+  for (let n = 1; n <= 200; n++) {
+    let maxCol = 0;
+    let maxRow = 0;
+    const seen = new Set<string>();
+    for (let s = 0; s < n; s++) {
+      const c = squareCell(s);
+      seen.add(`${c.col},${c.row}`);
+      maxCol = Math.max(maxCol, c.col);
+      maxRow = Math.max(maxRow, c.row);
+    }
+    expect(seen.size).toBe(n);
+    expect(Math.abs(maxCol - maxRow)).toBeLessThanOrEqual(1);
+    const side = Math.ceil(Math.sqrt(n));
+    expect(Math.max(maxCol, maxRow)).toBe(side - 1);
+  }
+});
+
 test("returns one descriptor per manifest entry", () => {
-  const m = sampleManifest(10);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  expect(out).toHaveLength(10);
+  const { buildings } = buildWorld(sampleManifest(10));
+  expect(buildings).toHaveLength(10);
 });
 
 test("descriptor ids match manifest paths", () => {
   const m = sampleManifest(5);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  expect(out.map((d) => d.id)).toEqual(m.map((e) => e.path));
+  const { buildings } = buildWorld(m);
+  expect(buildings.map((d) => d.id).sort()).toEqual(m.map((e) => e.path).sort());
+});
+
+test("each building's district is its parent directory", () => {
+  const m = [...sampleManifest(3, "/usr/bin"), ...sampleManifest(2, "/opt/x")];
+  const { buildings } = buildWorld(m);
+  for (const b of buildings) {
+    expect(b.district).toBe(dirname(b.id));
+  }
+});
+
+test("one region per distinct directory", () => {
+  const m = [
+    ...sampleManifest(3, "/usr/bin"),
+    ...sampleManifest(2, "/usr/local/bin"),
+    ...sampleManifest(1, "/opt/x"),
+  ];
+  const { regions } = buildWorld(m);
+  expect(regions.map((r) => r.path).sort()).toEqual([
+    "/opt/x",
+    "/usr/bin",
+    "/usr/local/bin",
+  ]);
+});
+
+test("regions are laid out on a near-square meta-grid", () => {
+  const dirs = ["/a", "/b", "/c", "/d", "/e"];
+  const m = dirs.flatMap((d) => sampleManifest(1, d));
+  const { regions } = buildWorld(m);
+  const cols = regions.map((r) => r.origin.x / REGION_CELL_TILES);
+  const rows = regions.map((r) => r.origin.y / REGION_CELL_TILES);
+  expect(Math.abs(Math.max(...cols) - Math.max(...rows))).toBeLessThanOrEqual(1);
+});
+
+test("region boxes never overlap", () => {
+  const m = ["/a", "/b", "/c", "/d", "/e", "/f", "/g"].flatMap((d) =>
+    sampleManifest(9, d),
+  );
+  const { regions } = buildWorld(m);
+  for (let i = 0; i < regions.length; i++) {
+    for (let j = i + 1; j < regions.length; j++) {
+      const a = regions[i]!;
+      const b = regions[j]!;
+      const disjoint =
+        a.origin.x + a.size.w <= b.origin.x ||
+        b.origin.x + b.size.w <= a.origin.x ||
+        a.origin.y + a.size.h <= b.origin.y ||
+        b.origin.y + b.size.h <= a.origin.y;
+      expect(disjoint).toBe(true);
+    }
+  }
+});
+
+test("every building sits inside its region's box", () => {
+  const m = [...sampleManifest(7, "/usr/bin"), ...sampleManifest(4, "/opt/x")];
+  const { buildings, regions } = buildWorld(m);
+  const byPath = new Map(regions.map((r) => [r.path, r]));
+  for (const b of buildings) {
+    const r = byPath.get(b.district)!;
+    expect(b.tile.x).toBeGreaterThanOrEqual(r.origin.x);
+    expect(b.tile.x).toBeLessThanOrEqual(r.origin.x + r.size.w);
+    expect(b.tile.y).toBeGreaterThanOrEqual(r.origin.y);
+    expect(b.tile.y).toBeLessThanOrEqual(r.origin.y + r.size.h);
+  }
 });
 
 test("tile keys are unique across all buildings", () => {
-  const m = sampleManifest(10);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  const tileKeys = out.map((d) => `${d.tile.x},${d.tile.y}`);
-  expect(new Set(tileKeys).size).toBe(out.length);
+  const m = [...sampleManifest(10, "/usr/bin"), ...sampleManifest(8, "/opt/x")];
+  const { buildings } = buildWorld(m);
+  const keys = buildings.map((d) => `${d.tile.x},${d.tile.y}`);
+  expect(new Set(keys).size).toBe(buildings.length);
 });
 
-test("buildings have at least one walkable tile between any two of them", () => {
-  const m = sampleManifest(16);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  for (let i = 0; i < out.length; i++) {
-    for (let j = i + 1; j < out.length; j++) {
-      const a = out[i]!.tile;
-      const b = out[j]!.tile;
+test("any two buildings leave at least one walkable tile between them", () => {
+  const m = [...sampleManifest(16, "/usr/bin"), ...sampleManifest(9, "/opt/x")];
+  const { buildings } = buildWorld(m);
+  for (let i = 0; i < buildings.length; i++) {
+    for (let j = i + 1; j < buildings.length; j++) {
+      const a = buildings[i]!.tile;
+      const b = buildings[j]!.tile;
       const dx = Math.abs(a.x - b.x);
       const dy = Math.abs(a.y - b.y);
       expect(Math.max(dx, dy)).toBeGreaterThanOrEqual(2);
@@ -48,19 +134,18 @@ test("buildings have at least one walkable tile between any two of them", () => 
   }
 });
 
-test("buildings receive sub-tile offsets so the grid does not look perfectly aligned", () => {
-  const m = sampleManifest(20);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  const someoneOffset = out.some(
-    (d) => d.tile.x !== Math.round(d.tile.x) || d.tile.y !== Math.round(d.tile.y),
+test("buildings receive sub-tile offsets so the grid is not perfectly aligned", () => {
+  const { buildings } = buildWorld(sampleManifest(20));
+  const someoneOffset = buildings.some(
+    (d) =>
+      d.tile.x !== Math.round(d.tile.x) || d.tile.y !== Math.round(d.tile.y),
   );
   expect(someoneOffset).toBe(true);
 });
 
-test("spriteKey is a known building sprite, footprint always 1x1 in v0", () => {
-  const m = sampleManifest(50);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  for (const d of out) {
+test("spriteKey is a known building sprite, footprint always 1x1", () => {
+  const { buildings } = buildWorld(sampleManifest(50));
+  for (const d of buildings) {
     expect(BUILDING_SPRITE_KEYS).toContain(d.spriteKey);
     expect(d.footprint).toEqual({ w: 1, h: 1 });
   }
@@ -68,19 +153,27 @@ test("spriteKey is a known building sprite, footprint always 1x1 in v0", () => {
 
 test("hashShort is the first 8 hex chars of the hash", () => {
   const m = sampleManifest(3);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  for (let i = 0; i < m.length; i++) {
-    expect(out[i]?.hashShort).toBe(m[i]!.hash.slice(0, 8));
+  const { buildings } = buildWorld(m);
+  const byId = new Map(buildings.map((d) => [d.id, d]));
+  for (const e of m) {
+    expect(byId.get(e.path)?.hashShort).toBe(e.hash.slice(0, 8));
   }
 });
 
-test("size and district are carried through", () => {
+test("size is carried through", () => {
   const m = sampleManifest(3);
-  const out = buildDistrict(m, { district: "/usr/bin" });
-  for (let i = 0; i < m.length; i++) {
-    expect(out[i]?.size).toBe(m[i]!.size);
-    expect(out[i]?.district).toBe("/usr/bin");
+  const { buildings } = buildWorld(m);
+  const byId = new Map(buildings.map((d) => [d.id, d]));
+  for (const e of m) {
+    expect(byId.get(e.path)?.size).toBe(e.size);
   }
+});
+
+test("region tint is deterministic per directory", () => {
+  const a = buildWorld(sampleManifest(1, "/usr/bin")).regions[0]!;
+  const b = buildWorld(sampleManifest(3, "/usr/bin")).regions[0]!;
+  expect(a.tint).toBe(b.tint);
+  expect(typeof a.tint).toBe("number");
 });
 
 test("same hash always produces same appearance, regardless of position", () => {
@@ -93,8 +186,8 @@ test("same hash always produces same appearance, regardless of position", () => 
     { path: "/usr/bin/a", hash: hex(99), size: 100 },
     { path: "/usr/bin/z", hash: sameHash, size: 100 },
   ];
-  const out1 = buildDistrict(m1, { district: "/usr/bin" });
-  const out2 = buildDistrict(m2, { district: "/usr/bin" });
+  const out1 = buildWorld(m1).buildings;
+  const out2 = buildWorld(m2).buildings;
   const a1 = out1.find((d) => d.hashShort === sameHash.slice(0, 8))!;
   const a2 = out2.find((d) => d.hashShort === sameHash.slice(0, 8))!;
   expect(a1.spriteKey).toBe(a2.spriteKey);
@@ -102,54 +195,66 @@ test("same hash always produces same appearance, regardless of position", () => 
 });
 
 test("output is byte-identical across runs (determinism contract)", () => {
-  const m = sampleManifest(100);
-  const out1 = buildDistrict(m, { district: "/usr/bin" });
-  const out2 = buildDistrict(m, { district: "/usr/bin" });
-  expect(out1).toEqual(out2);
+  const m = [...sampleManifest(40, "/usr/bin"), ...sampleManifest(20, "/opt/x")];
+  const out1 = buildWorld(m);
+  const out2 = buildWorld(m);
   expect(JSON.stringify(out1)).toBe(JSON.stringify(out2));
 });
 
 test("output is stable when input is presented in a different order", () => {
-  const m = sampleManifest(20);
+  const m = [...sampleManifest(20, "/usr/bin"), ...sampleManifest(7, "/opt/x")];
   const shuffled = [...m].reverse();
-  const out1 = buildDistrict(m, { district: "/usr/bin" });
-  const out2 = buildDistrict(shuffled, { district: "/usr/bin" });
-  const byId = (arr: ReturnType<typeof buildDistrict>) =>
-    Object.fromEntries(arr.map((d) => [d.id, d]));
-  expect(byId(out1)).toEqual(byId(out2));
+  const byId = (w: ReturnType<typeof buildWorld>) =>
+    Object.fromEntries(w.buildings.map((d) => [d.id, d]));
+  expect(byId(buildWorld(m))).toEqual(byId(buildWorld(shuffled)));
 });
 
-test("placement cache keeps existing buildings on the same tile when new ones are added", () => {
-  const cache = new Map<string, number>();
-  const first = sampleManifest(5);
-  const out1 = buildDistrict(first, { district: "/usr/bin" }, cache);
+test("adding a binary to an existing region keeps existing buildings in place", () => {
+  const cache = emptyCache();
+  const first = sampleManifest(5, "/usr/bin");
+  const out1 = buildWorld(first, cache);
 
   const second = [
     ...first,
     { path: "/usr/bin/zzz-new", hash: "ff".repeat(32), size: 99 },
   ];
-  const out2 = buildDistrict(second, { district: "/usr/bin" }, cache);
+  const out2 = buildWorld(second, cache);
 
-  const out1ById = new Map(out1.map((d) => [d.id, d.tile]));
-  for (const d of out2) {
+  const out1ById = new Map(out1.buildings.map((d) => [d.id, d.tile]));
+  for (const d of out2.buildings) {
     const prev = out1ById.get(d.id);
-    if (prev) {
-      expect(d.tile).toEqual(prev);
-    }
+    if (prev) expect(d.tile).toEqual(prev);
   }
 });
 
-test("placement cache assigns new buildings to the next free slot", () => {
-  const cache = new Map<string, number>();
-  buildDistrict(sampleManifest(3), { district: "/usr/bin" }, cache);
-  expect(Math.max(...cache.values())).toBe(2);
-  buildDistrict(
-    [
-      ...sampleManifest(3),
-      { path: "/usr/bin/zzz-new", hash: "ee".repeat(32), size: 1 },
-    ],
-    { district: "/usr/bin" },
+test("a new directory becomes a new region without disturbing existing ones", () => {
+  const cache = emptyCache();
+  const out1 = buildWorld(sampleManifest(3, "/usr/bin"), cache);
+  const usrBin1 = out1.regions.find((r) => r.path === "/usr/bin")!;
+
+  const out2 = buildWorld(
+    [...sampleManifest(3, "/usr/bin"), ...sampleManifest(1, "/opt/x")],
     cache,
   );
-  expect(cache.get("/usr/bin/zzz-new")).toBe(3);
+  const usrBin2 = out2.regions.find((r) => r.path === "/usr/bin")!;
+
+  expect(usrBin2.origin).toEqual(usrBin1.origin);
+  expect(out2.regions.map((r) => r.path).sort()).toEqual(["/opt/x", "/usr/bin"]);
+
+  const out1ById = new Map(out1.buildings.map((d) => [d.id, d.tile]));
+  for (const d of out2.buildings) {
+    const prev = out1ById.get(d.id);
+    if (prev) expect(d.tile).toEqual(prev);
+  }
+});
+
+test("placement cache assigns directories to incrementing region slots", () => {
+  const cache = emptyCache();
+  buildWorld(sampleManifest(2, "/usr/bin"), cache);
+  expect(cache.region.get("/usr/bin")).toBe(0);
+  buildWorld(
+    [...sampleManifest(2, "/usr/bin"), ...sampleManifest(1, "/opt/x")],
+    cache,
+  );
+  expect(cache.region.get("/opt/x")).toBe(1);
 });

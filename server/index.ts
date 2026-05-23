@@ -1,21 +1,18 @@
 import { scanPaths } from "./scanner.ts";
-import { buildDistrict, type PlacementCache } from "./world-builder.ts";
+import { buildWorld, emptyCache } from "./world-builder.ts";
 import { getRunningBinaryPaths, getRunningProcesses } from "./proc.ts";
-import type { BuildingDescriptor } from "../shared/types.ts";
+import type { World } from "../shared/types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
-const DISTRICT = "running";
 const TICK_MS = 1000;
 const TOPIC = "isotop";
 
-const placements: PlacementCache = new Map();
+const placements = emptyCache();
 const knownExes = new Set<string>();
 
-async function buildBuildingsFor(
-  paths: string[],
-): Promise<BuildingDescriptor[]> {
+async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths);
-  return buildDistrict(manifest, { district: DISTRICT }, placements);
+  return buildWorld(manifest, placements);
 }
 
 const server = Bun.serve({
@@ -36,12 +33,12 @@ const server = Bun.serve({
       const started = performance.now();
       const paths = await getRunningBinaryPaths();
       for (const p of paths) knownExes.add(p);
-      const buildings = await buildBuildingsFor(paths);
+      const world = await buildWorldFor(paths);
       const elapsedMs = Math.round(performance.now() - started);
       console.log(
-        `[world] ${paths.length} unique exes -> ${buildings.length} buildings in ${elapsedMs}ms`,
+        `[world] ${paths.length} unique exes -> ${world.buildings.length} buildings across ${world.regions.length} regions in ${elapsedMs}ms`,
       );
-      return Response.json({ district: DISTRICT, buildings });
+      return Response.json(world);
     }
 
     if (url.pathname === "/procs") {
@@ -64,7 +61,7 @@ const server = Bun.serve({
 });
 
 console.log(`[server] listening on http://localhost:${server.port}`);
-console.log(`[server] district: ${DISTRICT} (universe = currently running binaries)`);
+console.log(`[server] regions = directories of currently running binaries`);
 
 setInterval(async () => {
   if (server.subscriberCount(TOPIC) === 0) return;
@@ -85,15 +82,19 @@ setInterval(async () => {
     }
     if (fresh.length > 0) {
       for (const e of fresh) knownExes.add(e);
-      const allBuildings = await buildBuildingsFor([...knownExes]);
+      const world = await buildWorldFor([...knownExes]);
       const freshSet = new Set(fresh);
-      const newBuildings = allBuildings.filter((b) => freshSet.has(b.id));
+      const newBuildings = world.buildings.filter((b) => freshSet.has(b.id));
       server.publish(
         TOPIC,
-        JSON.stringify({ kind: "world-delta", buildings: newBuildings }),
+        JSON.stringify({
+          kind: "world-delta",
+          buildings: newBuildings,
+          regions: world.regions,
+        }),
       );
       console.log(
-        `[ws] pushed world-delta with ${newBuildings.length} new buildings`,
+        `[ws] pushed world-delta with ${newBuildings.length} new buildings across ${world.regions.length} regions`,
       );
     }
   } catch (err) {

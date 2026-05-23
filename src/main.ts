@@ -34,7 +34,7 @@ try {
   game.scene.add("city", CityScene, true, { buildings: world.buildings });
 
   console.log(
-    `[client] rendering ${world.buildings.length} buildings in ${world.district}`,
+    `[client] rendering ${world.buildings.length} buildings across ${world.regions.length} regions`,
   );
 } catch (err) {
   setStatus(`failed to load /world: ${(err as Error).message}`, "#ff6b6b");

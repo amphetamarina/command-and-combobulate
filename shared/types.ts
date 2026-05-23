@@ -15,3 +15,15 @@ export type BuildingDescriptor = {
   hashShort: string;
   size: number;
 };
+
+export type Region = {
+  path: string;
+  origin: { x: number; y: number };
+  size: { w: number; h: number };
+  tint: number;
+};
+
+export type World = {
+  buildings: BuildingDescriptor[];
+  regions: Region[];
+};

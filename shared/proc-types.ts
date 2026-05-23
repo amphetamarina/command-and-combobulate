@@ -1,4 +1,4 @@
-import type { BuildingDescriptor } from "./types.ts";
+import type { BuildingDescriptor, Region } from "./types.ts";
 
 export type ProcessSnapshot = {
   pid: number;
@@ -20,4 +20,5 @@ export type LiveMessage =
   | {
       kind: "world-delta";
       buildings: BuildingDescriptor[];
+      regions: Region[];
     };

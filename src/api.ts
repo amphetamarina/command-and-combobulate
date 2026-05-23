@@ -1,9 +1,9 @@
-import type { BuildingDescriptor } from "../shared/types.ts";
+import type { BuildingDescriptor, Region } from "../shared/types.ts";
 import type { ProcsResponse } from "../shared/proc-types.ts";
 
 export type WorldResponse = {
-  district: string;
   buildings: BuildingDescriptor[];
+  regions: Region[];
 };
 
 export async function fetchWorld(): Promise<WorldResponse> {
