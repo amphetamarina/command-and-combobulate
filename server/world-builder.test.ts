@@ -1,6 +1,11 @@
 import { test, expect } from "bun:test";
 import { dirname } from "node:path";
-import { buildWorld, emptyCache, squareCell } from "./world-builder.ts";
+import {
+  buildWorld,
+  emptyCache,
+  releaseRegion,
+  squareCell,
+} from "./world-builder.ts";
 import type { ManifestEntry } from "../shared/types.ts";
 import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
@@ -293,6 +298,27 @@ test("a newly-touched work directory keeps existing regions in place", () => {
   const usrBin2 = out2.regions.find((r) => r.path === "/usr/bin")!;
   expect(usrBin2.origin).toEqual(usrBin1.origin);
   expect(out2.regions.some((r) => r.path === "/var/log")).toBe(true);
+});
+
+test("released region slots are reused by later directories", () => {
+  const cache = emptyCache();
+  buildWorld(sampleManifest(2, "/usr/bin"), cache, ["/a", "/b"]);
+  const slotA = cache.region.get("/a")!;
+
+  releaseRegion(cache, "/a");
+  expect(cache.region.has("/a")).toBe(false);
+
+  buildWorld(sampleManifest(2, "/usr/bin"), cache, ["/b", "/c"]);
+  expect(cache.region.get("/c")).toBe(slotA);
+});
+
+test("releasing a region never reassigns a live region's slot", () => {
+  const cache = emptyCache();
+  buildWorld(sampleManifest(2, "/usr/bin"), cache, ["/a", "/b", "/c"]);
+  releaseRegion(cache, "/b");
+  buildWorld(sampleManifest(2, "/usr/bin"), cache, ["/a", "/c", "/d", "/e"]);
+  const slots = [...cache.region.values()];
+  expect(new Set(slots).size).toBe(slots.length);
 });
 
 test("placement cache assigns directories to incrementing region slots", () => {

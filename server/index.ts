@@ -1,5 +1,5 @@
 import { scanPaths } from "./scanner.ts";
-import { buildWorld, emptyCache } from "./world-builder.ts";
+import { buildWorld, emptyCache, releaseRegion } from "./world-builder.ts";
 import {
   getRunningBinaryPaths,
   getRunningProcesses,
@@ -11,16 +11,17 @@ import type { World } from "../shared/types.ts";
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
 const TOPIC = "isotop";
+const WORK_DIR_TTL_MS = 15000;
 
 const placements = emptyCache();
 const knownExes = new Set<string>();
-const knownWorkDirs = new Set<string>();
+const workDirLastActive = new Map<string, number>();
 const sampler = new ProcSampler();
 const activitySampler = new FileActivitySampler();
 
 async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths);
-  return buildWorld(manifest, placements, [...knownWorkDirs]);
+  return buildWorld(manifest, placements, [...workDirLastActive.keys()]);
 }
 
 const server = Bun.serve({
@@ -87,19 +88,33 @@ setInterval(async () => {
       }),
     );
 
+    const now = Date.now();
     const liveExes = new Set(processes.map((p) => p.exe));
     const freshExes: string[] = [];
     for (const e of liveExes) {
       if (!knownExes.has(e)) freshExes.push(e);
     }
+
     const freshWorkDirs: string[] = [];
     for (const a of activity.values()) {
-      if (!knownWorkDirs.has(a.dir)) freshWorkDirs.push(a.dir);
+      if (!workDirLastActive.has(a.dir)) freshWorkDirs.push(a.dir);
+      workDirLastActive.set(a.dir, now);
+    }
+    const expiredWorkDirs: string[] = [];
+    for (const [dir, last] of workDirLastActive) {
+      if (now - last > WORK_DIR_TTL_MS) {
+        workDirLastActive.delete(dir);
+        releaseRegion(placements, dir);
+        expiredWorkDirs.push(dir);
+      }
     }
 
-    if (freshExes.length > 0 || freshWorkDirs.length > 0) {
+    const worldChanged =
+      freshExes.length > 0 ||
+      freshWorkDirs.length > 0 ||
+      expiredWorkDirs.length > 0;
+    if (worldChanged) {
       for (const e of freshExes) knownExes.add(e);
-      for (const d of freshWorkDirs) knownWorkDirs.add(d);
       const world = await buildWorldFor([...knownExes]);
       const freshSet = new Set(freshExes);
       const newBuildings = world.buildings.filter((b) => freshSet.has(b.id));
@@ -112,7 +127,7 @@ setInterval(async () => {
         }),
       );
       console.log(
-        `[ws] world-delta: +${newBuildings.length} buildings, +${freshWorkDirs.length} work dirs, ${world.regions.length} regions total`,
+        `[ws] world-delta: +${newBuildings.length} buildings, +${freshWorkDirs.length}/-${expiredWorkDirs.length} work dirs, ${world.regions.length} regions total`,
       );
     }
   } catch (err) {

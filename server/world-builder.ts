@@ -29,10 +29,18 @@ const REGION_TINTS = [
 export type PlacementCache = {
   region: Map<string, number>;
   building: Map<string, number>;
+  freeRegionSlots: number[];
 };
 
 export function emptyCache(): PlacementCache {
-  return { region: new Map(), building: new Map() };
+  return { region: new Map(), building: new Map(), freeRegionSlots: [] };
+}
+
+export function releaseRegion(cache: PlacementCache, dir: string): void {
+  const slot = cache.region.get(dir);
+  if (slot === undefined) return;
+  cache.region.delete(dir);
+  cache.freeRegionSlots.push(slot);
 }
 
 export function squareCell(slot: number): { col: number; row: number } {
@@ -65,11 +73,15 @@ function assignSlots(
   groups: Map<string, ManifestEntry[]>,
   cache: PlacementCache,
 ): void {
+  const free = cache.freeRegionSlots.sort((a, b) => a - b);
   let nextRegion =
-    cache.region.size > 0 ? Math.max(...cache.region.values()) + 1 : 0;
+    Math.max(-1, ...cache.region.values(), ...free) + 1;
   for (const dir of allDirs) {
-    if (!cache.region.has(dir)) cache.region.set(dir, nextRegion++);
+    if (cache.region.has(dir)) continue;
+    const slot = free.length > 0 ? free.shift()! : nextRegion++;
+    cache.region.set(dir, slot);
   }
+  cache.freeRegionSlots = free;
 
   for (const dir of binDirs) {
     const group = groups.get(dir)!;
