@@ -1,40 +1,42 @@
 import type Phaser from "phaser";
-import { tileToScreen } from "./iso.ts";
+import { TILE_W, TILE_H } from "./iso.ts";
 
-const TILE_COLOR_A = 0x171724;
-const TILE_COLOR_B = 0x121219;
-const TILE_STROKE = 0x222236;
+export const FLOOR_COUNT = 8;
 
-export function drawGround(
-  g: Phaser.GameObjects.Graphics,
+function floorVariant(x: number, y: number): number {
+  const h = Math.abs((x * 73856093) ^ (y * 19349663));
+  return h % FLOOR_COUNT;
+}
+
+export function paintGround(
+  rt: Phaser.GameObjects.RenderTexture,
+  floorKeys: string[],
   extentX: number,
   extentY: number,
   padding: number,
 ): void {
+  const hw = TILE_W / 2;
+  const hh = TILE_H / 2;
   const x0 = -padding;
   const y0 = -padding;
   const x1 = extentX + padding;
   const y1 = extentY + padding;
 
-  g.lineStyle(1, TILE_STROKE, 1);
+  const left = (x0 - y1) * hw - hw;
+  const top = (x0 + y0) * hh;
+  const right = (x1 - y0) * hw + hw;
+  const bottom = (x1 + y1) * hh + TILE_H;
+
+  rt.setPosition(left, top);
+  rt.setOrigin(0, 0);
+  rt.resize(Math.ceil(right - left), Math.ceil(bottom - top));
+  rt.clear();
 
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
-      const N = tileToScreen(x, y);
-      const E = tileToScreen(x + 1, y);
-      const S = tileToScreen(x + 1, y + 1);
-      const W = tileToScreen(x, y + 1);
-
-      const fill = ((x + y) & 1) === 0 ? TILE_COLOR_A : TILE_COLOR_B;
-      g.fillStyle(fill, 1);
-      g.beginPath();
-      g.moveTo(N.x, N.y);
-      g.lineTo(E.x, E.y);
-      g.lineTo(S.x, S.y);
-      g.lineTo(W.x, W.y);
-      g.closePath();
-      g.fillPath();
-      g.strokePath();
+      const sx = (x - y) * hw;
+      const sy = (x + y) * hh;
+      rt.draw(floorKeys[floorVariant(x, y)]!, sx - hw - left, sy - top);
     }
   }
 }

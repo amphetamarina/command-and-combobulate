@@ -8,7 +8,7 @@ import {
 } from "../shared/sprites.ts";
 import { killProcess, liveSocketUrl } from "./api.ts";
 import { Sidebar, type MinimapData } from "./sidebar.ts";
-import { drawGround } from "./ground.ts";
+import { paintGround, FLOOR_COUNT } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
   NPC_VARIANT_KEYS,
@@ -110,13 +110,23 @@ function npcAssetUrl(key: NpcSpriteKey): string {
   return `/isotop-assets/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
 }
 
+const FLOOR_KEYS = Array.from(
+  { length: FLOOR_COUNT },
+  (_, i) => `floor/${i + 1}`,
+);
+
+function floorAssetUrl(index: number): string {
+  const n = index.toString().padStart(2, "0");
+  return `/isotop-assets/sci-fi/terrain/station/floor-${n}.png`;
+}
+
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private regions: Region[] = [];
   private regionByPath = new Map<string, Region>();
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
-  private groundGraphics: Phaser.GameObjects.Graphics | null = null;
+  private groundRt: Phaser.GameObjects.RenderTexture | null = null;
   private regionGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
@@ -149,6 +159,9 @@ export class CityScene extends Phaser.Scene {
     for (const key of NPC_VARIANT_KEYS) {
       this.load.image(key, npcAssetUrl(key));
     }
+    for (let i = 0; i < FLOOR_KEYS.length; i++) {
+      this.load.image(FLOOR_KEYS[i]!, floorAssetUrl(i + 1));
+    }
   }
 
   create() {
@@ -156,7 +169,7 @@ export class CityScene extends Phaser.Scene {
       (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
     );
 
-    this.groundGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
+    this.groundRt = this.add.renderTexture(0, 0, 16, 16).setDepth(GROUND_DEPTH);
     this.regionGraphics = this.add.graphics().setDepth(REGION_DEPTH);
     this.redrawGround();
     this.renderRegions();
@@ -269,10 +282,9 @@ export class CityScene extends Phaser.Scene {
   }
 
   private redrawGround() {
-    if (!this.groundGraphics) return;
+    if (!this.groundRt) return;
     const extent = this.worldExtent();
-    this.groundGraphics.clear();
-    drawGround(this.groundGraphics, extent.x, extent.y, GROUND_PADDING);
+    paintGround(this.groundRt, FLOOR_KEYS, extent.x, extent.y, GROUND_PADDING);
   }
 
   private renderRegions() {
