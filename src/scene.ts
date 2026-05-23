@@ -9,6 +9,7 @@ import {
 import { killProcess, liveSocketUrl } from "./api.ts";
 import { Sidebar, type MinimapData } from "./sidebar.ts";
 import { buildGroundTiles, FLOOR_COUNT } from "./ground.ts";
+import { placeWalls, WALL_KEYS, wallAssetUrl } from "./walls.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
   NPC_VARIANT_KEYS,
@@ -127,6 +128,7 @@ export class CityScene extends Phaser.Scene {
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
   private floorTiles: Phaser.GameObjects.Image[] = [];
+  private wallSprites: Phaser.GameObjects.Image[] = [];
   private regionGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
@@ -161,6 +163,9 @@ export class CityScene extends Phaser.Scene {
     }
     for (let i = 0; i < FLOOR_KEYS.length; i++) {
       this.load.image(FLOOR_KEYS[i]!, floorAssetUrl(i + 1));
+    }
+    for (let i = 0; i < WALL_KEYS.length; i++) {
+      this.load.image(WALL_KEYS[i]!, wallAssetUrl(i + 1));
     }
   }
 
@@ -282,6 +287,7 @@ export class CityScene extends Phaser.Scene {
 
   private redrawGround() {
     for (const t of this.floorTiles) t.destroy();
+    for (const w of this.wallSprites) w.destroy();
     const extent = this.worldExtent();
     this.floorTiles = buildGroundTiles(
       this,
@@ -291,6 +297,7 @@ export class CityScene extends Phaser.Scene {
       GROUND_PADDING,
       GROUND_DEPTH,
     );
+    this.wallSprites = placeWalls(this, extent.x, extent.y, GROUND_PADDING);
   }
 
   private renderRegions() {
