@@ -42,11 +42,14 @@ function valueNoise(x: number, y: number): number {
   return a + (b - a) * fy;
 }
 
-function inAnyRegion(x: number, y: number, regions: RegionBox[]): boolean {
+function regionTileSet(regions: RegionBox[]): Set<string> {
+  const tiles = new Set<string>();
   for (const r of regions) {
-    if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) return true;
+    for (let y = r.y0; y < r.y1; y++) {
+      for (let x = r.x0; x < r.x1; x++) tiles.add(`${x},${y}`);
+    }
   }
-  return false;
+  return tiles;
 }
 
 export function paintGround(
@@ -58,6 +61,7 @@ export function paintGround(
   const py0 = -p.padding;
   const px1 = p.extentX + p.padding;
   const py1 = p.extentY + p.padding;
+  const regionTiles = regionTileSet(p.regions);
 
   const place = (x: number, y: number, key: string) => {
     const s = tileToScreen(x, y);
@@ -68,9 +72,10 @@ export function paintGround(
     for (let x = px0 - p.desertMargin; x < px1 + p.desertMargin; x++) {
       const onStation = x >= px0 && x < px1 && y >= py0 && y < py1;
       if (onStation) {
+        const key = `${x},${y}`;
         let idx = EMPTY_FLOOR;
-        if (p.buildingPads.has(`${x},${y}`)) idx = BUILDING_FLOOR;
-        else if (inAnyRegion(x, y, p.regions)) idx = REGION_FLOOR;
+        if (p.buildingPads.has(key)) idx = BUILDING_FLOOR;
+        else if (regionTiles.has(key)) idx = REGION_FLOOR;
         place(x, y, p.stationFloors[idx]!);
         continue;
       }
