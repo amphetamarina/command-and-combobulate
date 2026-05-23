@@ -29,11 +29,20 @@ const WS_RECONNECT_MS = 2000;
 const WANDER_MIN_MS = 1500;
 const WANDER_MAX_MS = 3500;
 const WANDER_STAGGER_MS = 2000;
+const BAR_W = 26;
+const BAR_H = 3;
+const BAR_TRACK_COLOR = 0x14141e;
+const MEM_BAR_COLOR = 0x4aa6ff;
+const MEM_BAR_FULL = 0.2;
 
 type NpcState = {
-  sprite: Phaser.GameObjects.Image;
+  container: Phaser.GameObjects.Container;
+  mech: Phaser.GameObjects.Image;
+  cpuFill: Phaser.GameObjects.Rectangle;
+  memFill: Phaser.GameObjects.Rectangle;
   building: BuildingDescriptor;
   currentTile: { x: number; y: number };
+  latest: ProcessSnapshot;
 };
 
 type CitySceneData = { buildings: BuildingDescriptor[]; regions: Region[] };
@@ -47,6 +56,16 @@ function formatSize(n: number): string {
 function formatRegionLabel(path: string): string {
   const home = path.replace(/^\/home\/[^/]+/, "~").replace(/^\/root/, "~");
   return home.length > 40 ? `…${home.slice(-39)}` : home;
+}
+
+function clamp01(n: number): number {
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+
+function cpuBarColor(cpu: number): number {
+  if (cpu < 0.5) return 0x4ad66a;
+  if (cpu < 0.8) return 0xe0c84a;
+  return 0xe05a4a;
 }
 
 function labelColor(tint: number): string {
@@ -259,34 +278,87 @@ export class CityScene extends Phaser.Scene {
     const seen = new Set<number>();
     for (const p of processes) {
       seen.add(p.pid);
-      if (this.npcs.has(p.pid)) continue;
+      const existing = this.npcs.get(p.pid);
+      if (existing) {
+        this.applyUsage(existing, p);
+        continue;
+      }
       const building = this.buildingByExe.get(p.exe);
       if (!building) continue;
-      const spawn = npcWorldPosition(p.pid, building);
-      const sprite = this.add.image(
-        spawn.screen.x,
-        spawn.screen.y,
-        npcSpriteKey(p.pid),
-      );
-      sprite.setOrigin(0.5, 1);
-      sprite.setDepth(spawn.tileSum + 0.5);
-      sprite.setInteractive({ pixelPerfect: true });
-      sprite.on("pointerover", () => this.showProcTooltip(p));
-      sprite.on("pointerout", () => this.hideTooltip());
-      const state: NpcState = {
-        sprite,
-        building,
-        currentTile: spawn.tile,
-      };
+      const state = this.createNpc(p, building);
       this.npcs.set(p.pid, state);
       this.scheduleWander(state);
     }
     for (const [pid, state] of this.npcs) {
       if (!seen.has(pid)) {
-        state.sprite.destroy();
+        state.container.destroy();
         this.npcs.delete(pid);
       }
     }
+  }
+
+  private createNpc(
+    p: ProcessSnapshot,
+    building: BuildingDescriptor,
+  ): NpcState {
+    const spawn = npcWorldPosition(p.pid, building);
+    const mech = this.add.image(0, 0, npcSpriteKey(p.pid)).setOrigin(0.5, 1);
+    mech.setInteractive({ pixelPerfect: true });
+    mech.on("pointerover", () => this.showProcTooltip(state.latest));
+    mech.on("pointerout", () => this.hideTooltip());
+
+    const top = -mech.displayHeight;
+    const left = -BAR_W / 2;
+    const cpuTrack = this.add
+      .rectangle(left, top - 6, BAR_W, BAR_H, BAR_TRACK_COLOR)
+      .setOrigin(0, 0.5);
+    const cpuFill = this.add
+      .rectangle(left, top - 6, BAR_W, BAR_H, cpuBarColor(p.cpu))
+      .setOrigin(0, 0.5);
+    const memTrack = this.add
+      .rectangle(left, top - 11, BAR_W, BAR_H, BAR_TRACK_COLOR)
+      .setOrigin(0, 0.5);
+    const memFill = this.add
+      .rectangle(left, top - 11, BAR_W, BAR_H, MEM_BAR_COLOR)
+      .setOrigin(0, 0.5);
+    const label = this.add
+      .text(0, top - 14, p.comm, {
+        fontFamily: "ui-monospace, monospace",
+        fontSize: "10px",
+        color: "#e6e6f2",
+        stroke: "#0a0a12",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1);
+
+    const container = this.add.container(spawn.screen.x, spawn.screen.y, [
+      mech,
+      cpuTrack,
+      cpuFill,
+      memTrack,
+      memFill,
+      label,
+    ]);
+    container.setDepth(spawn.tileSum + 0.5);
+
+    const state: NpcState = {
+      container,
+      mech,
+      cpuFill,
+      memFill,
+      building,
+      currentTile: spawn.tile,
+      latest: p,
+    };
+    this.applyUsage(state, p);
+    return state;
+  }
+
+  private applyUsage(state: NpcState, p: ProcessSnapshot) {
+    state.latest = p;
+    state.cpuFill.displayWidth = BAR_W * clamp01(p.cpu);
+    state.cpuFill.fillColor = cpuBarColor(p.cpu);
+    state.memFill.displayWidth = BAR_W * clamp01(p.mem / MEM_BAR_FULL);
   }
 
   private scheduleWander(state: NpcState) {
@@ -296,7 +368,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   private wanderOnce(state: NpcState) {
-    if (!state.sprite.active) return;
+    if (!state.container.active) return;
     const off =
       WANDER_OFFSETS[Math.floor(Math.random() * WANDER_OFFSETS.length)]!;
     const targetTile = {
@@ -306,7 +378,7 @@ export class CityScene extends Phaser.Scene {
     const targetScreen = tileToScreen(targetTile.x, targetTile.y);
     const startTile = { x: state.currentTile.x, y: state.currentTile.y };
     this.tweens.add({
-      targets: state.sprite,
+      targets: state.container,
       x: targetScreen.x,
       y: targetScreen.y + TILE_H / 2,
       duration: WANDER_MIN_MS + Math.random() * (WANDER_MAX_MS - WANDER_MIN_MS),
@@ -315,11 +387,11 @@ export class CityScene extends Phaser.Scene {
         const p = tween.progress;
         const cx = startTile.x + (targetTile.x - startTile.x) * p;
         const cy = startTile.y + (targetTile.y - startTile.y) * p;
-        state.sprite.setDepth(cx + cy + 0.5);
+        state.container.setDepth(cx + cy + 0.5);
       },
       onComplete: () => {
         state.currentTile = targetTile;
-        state.sprite.setDepth(targetTile.x + targetTile.y + 0.5);
+        state.container.setDepth(targetTile.x + targetTile.y + 0.5);
         this.wanderOnce(state);
       },
     });
@@ -356,7 +428,9 @@ export class CityScene extends Phaser.Scene {
 
   private showProcTooltip(p: ProcessSnapshot) {
     if (this.dragging || !this.tooltip) return;
-    this.tooltip.textContent = `pid:  ${p.pid}\ncomm: ${p.comm}\nexe:  ${p.exe}`;
+    const cpu = `${(p.cpu * 100).toFixed(0)}%`;
+    const mem = `${(p.mem * 100).toFixed(1)}%`;
+    this.tooltip.textContent = `pid:  ${p.pid}\ncomm: ${p.comm}\ncpu:  ${cpu} of one core\nmem:  ${mem} of RAM\nexe:  ${p.exe}`;
     this.tooltip.style.display = "block";
   }
 
