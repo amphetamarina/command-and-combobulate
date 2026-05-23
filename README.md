@@ -55,7 +55,16 @@ appear when previously-unseen executables start running.
   and walks back. Idle held-open files do not count. Work regions are
   drawn distinctly from binary neighbourhoods (fainter fill, an
   outlined perimeter, an italic teal label) and fade away once the
-  folder has seen no activity for ~15s.
+  folder has seen no activity for ~15s. Processes that do bursty I/O
+  without a long-lived file handle (editors, agents that open, write,
+  and close within a tick) are surfaced via their working directory
+  instead, so they walk to the folder they are working in.
+- **Sidebar and minimap.** A Command-and-Conquer-style panel on the
+  right shows a schematic minimap (regions, buildings, mechs, and the
+  camera viewport; click to recenter). Clicking a mech selects it and
+  fills the panel below with its pid, CPU, memory, current file
+  activity, and exe, plus a KILL button (two-step confirm) that sends
+  SIGTERM to the process.
 - **Hover for details.** Hovering a building shows its full path,
   hash prefix, and size on disk. Hovering an NPC shows its PID,
   comm name, live CPU and memory, and exe.
@@ -64,6 +73,9 @@ appear when previously-unseen executables start running.
 
 - **Pan**: click and drag.
 - **Zoom**: mouse wheel.
+- **Select a mech**: click it; details and a kill button appear in the
+  sidebar.
+- **Jump the camera**: click anywhere on the minimap.
 
 ## Status
 
@@ -86,6 +98,11 @@ appear when previously-unseen executables start running.
 - **v1.4** (shipped): active file I/O detected from
   `/proc/<pid>/fdinfo` offset deltas; touched directories become work
   regions and mechs walk to the folder they are reading or writing.
+  Work regions are styled distinctly and expire after ~15s idle, and
+  bursty I/O with no long-lived handle is attributed to the process's
+  working directory.
+- **v1.5** (shipped): RTS sidebar with a schematic minimap, mech
+  selection, a live process inspector, and a kill button.
 
 ## What isotop deliberately is not yet
 
