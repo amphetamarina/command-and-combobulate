@@ -14,6 +14,7 @@ export default defineConfig({
       "/world": `http://localhost:${API_PORT}`,
       "/health": `http://localhost:${API_PORT}`,
       "/procs": `http://localhost:${API_PORT}`,
+      "/kill": `http://localhost:${API_PORT}`,
     },
   },
   resolve: {

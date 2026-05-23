@@ -28,6 +28,17 @@ async function setFd(
   );
 }
 
+async function setIo(pid: number, cwd: string, read: number, write: number) {
+  const dir = join(procPath, String(pid));
+  await mkdir(join(dir, "fd"), { recursive: true });
+  await rm(join(dir, "cwd"), { force: true });
+  await symlink(cwd, join(dir, "cwd"));
+  await writeFile(
+    join(dir, "io"),
+    `rchar:\t${read}\nwchar:\t${write}\nread_bytes:\t0\nwrite_bytes:\t0\n`,
+  );
+}
+
 beforeEach(async () => {
   root = join(tmpdir(), `tty-act-test-${process.pid}-${Date.now()}`);
   procPath = join(root, "proc");
@@ -98,4 +109,38 @@ test("reports the most active file when several advance", async () => {
   await setFd(500, 2, "/data/b/big.txt", 100000, RDONLY);
   const out = await sampler.sample([500], procPath);
   expect(out.get(500)?.dir).toBe("/data/b");
+});
+
+test("falls back to the cwd when a process does bursty I/O with no streaming fd", async () => {
+  await setIo(600, "/home/me/project", 0, 0);
+  const sampler = new FileActivitySampler();
+  await sampler.sample([600], procPath);
+
+  await setIo(600, "/home/me/project", 0, 4 * 1024 * 1024);
+  const out = await sampler.sample([600], procPath);
+  const a = out.get(600)!;
+  expect(a.dir).toBe("/home/me/project");
+  expect(a.direction).toBe("write");
+});
+
+test("ignores trivial I/O below the byte threshold", async () => {
+  await setIo(700, "/home/me/project", 0, 0);
+  const sampler = new FileActivitySampler();
+  await sampler.sample([700], procPath);
+
+  await setIo(700, "/home/me/project", 1000, 1000);
+  const out = await sampler.sample([700], procPath);
+  expect(out.has(700)).toBe(false);
+});
+
+test("prefers a precise streaming file over the cwd fallback", async () => {
+  await setFd(800, 5, "/data/stream.log", 0, WRONLY);
+  await setIo(800, "/home/me/project", 0, 0);
+  const sampler = new FileActivitySampler();
+  await sampler.sample([800], procPath);
+
+  await setFd(800, 5, "/data/stream.log", 8192, WRONLY);
+  await setIo(800, "/home/me/project", 0, 4 * 1024 * 1024);
+  const out = await sampler.sample([800], procPath);
+  expect(out.get(800)?.path).toBe("/data/stream.log");
 });
