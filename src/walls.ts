@@ -1,7 +1,9 @@
 import type Phaser from "phaser";
 import { tileToScreen } from "./iso.ts";
 
-const STRAIGHT_VARIANTS = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12];
+// One consistent straight variant reads as a continuous wall; cycling all of
+// them looked like random rubble. Swap WALL_VARIANT to taste (1-12, not 7).
+const WALL_VARIANT = 8;
 const CORNER_VARIANT = 7;
 
 export const WALL_KEYS = Array.from({ length: 12 }, (_, i) => `wall/${i + 1}`);
@@ -45,13 +47,11 @@ export function placeWalls(
   const y1 = extentY + padding - 1;
   const walls: Phaser.GameObjects.Image[] = [];
 
-  let cycle = 0;
   const straight = (tx: number, ty: number, flipX: boolean) => {
-    const key = `wall/${STRAIGHT_VARIANTS[cycle++ % STRAIGHT_VARIANTS.length]}`;
     const s = tileToScreen(tx, ty);
     walls.push(
       scene.add
-        .image(s.x, s.y, key)
+        .image(s.x, s.y, `wall/${WALL_VARIANT}`)
         .setOrigin(ORIGIN_X, ORIGIN_Y)
         .setFlipX(flipX)
         .setDepth(tx + ty + DEPTH_BIAS),
