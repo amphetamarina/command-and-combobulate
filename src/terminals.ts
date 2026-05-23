@@ -16,10 +16,12 @@ type TermWindow = {
 type TerminalsOptions = {
   onOpened: (id: string) => void;
   onClosed: (id: string) => void;
+  onList: (ids: string[]) => void;
 };
 
 export class TerminalsUI {
   private windows = new Map<string, TermWindow>();
+  private active: string[] = [];
   private zTop = 60;
   private spawnOffset = 0;
 
@@ -28,7 +30,9 @@ export class TerminalsUI {
   async spawn(): Promise<void> {
     const id = await createTerminal();
     if (!id) return;
+    this.active.push(id);
     this.opts.onOpened(id);
+    this.opts.onList([...this.active]);
     this.openWindow(id);
   }
 
@@ -155,8 +159,10 @@ export class TerminalsUI {
     win.term.dispose();
     win.root.remove();
     this.windows.delete(id);
+    this.active = this.active.filter((t) => t !== id);
     killTerminal(id);
     this.opts.onClosed(id);
+    this.opts.onList([...this.active]);
   }
 
   private makeDraggable(root: HTMLDivElement, handle: HTMLElement): void {

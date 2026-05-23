@@ -57,6 +57,8 @@ export class Sidebar {
   private ctx: CanvasRenderingContext2D;
   private detail: HTMLDivElement;
   private empty: HTMLDivElement;
+  private termList!: HTMLDivElement;
+  private termEmpty!: HTMLDivElement;
   private killBtn: HTMLButtonElement;
   private fields: HTMLDivElement;
   private commEl: HTMLDivElement;
@@ -105,27 +107,37 @@ export class Sidebar {
     this.canvas.addEventListener("pointerdown", (e) => this.onMinimapClick(e));
 
     const buildSection = document.createElement("div");
-    buildSection.style.cssText = "margin-top:12px";
-    const buildLabel = document.createElement("div");
-    buildLabel.textContent = "BUILD";
-    buildLabel.style.cssText =
-      "color:#7a7a95;letter-spacing:2px;font-size:10px;margin-bottom:6px";
+    buildSection.style.cssText = "margin-top:14px";
+    buildSection.append(this.sectionLabel("BUILD"));
     const termBtn = document.createElement("button");
-    termBtn.textContent = "\u{1F5A5}  Terminal";
     termBtn.style.cssText = [
+      "display:flex",
+      "align-items:center",
+      "gap:10px",
       "width:100%",
-      "padding:8px",
+      "padding:8px 10px",
       "background:#16263a",
       "color:#7fe0d0",
       "border:1px solid #2c4a5a",
-      "border-radius:3px",
+      "border-radius:4px",
       "font-family:inherit",
-      "font-size:12px",
+      "font-size:13px",
       "text-align:left",
       "cursor:pointer",
     ].join(";");
+    termBtn.append(this.icon(28), this.span("Terminal"));
     termBtn.addEventListener("click", () => this.opts.onBuildTerminal());
-    buildSection.append(buildLabel, termBtn);
+    buildSection.appendChild(termBtn);
+
+    const termSection = document.createElement("div");
+    termSection.style.cssText = "margin-top:14px";
+    termSection.append(this.sectionLabel("TERMINALS"));
+    this.termList = document.createElement("div");
+    this.termList.style.cssText = "display:flex;flex-direction:column;gap:4px";
+    this.termEmpty = document.createElement("div");
+    this.termEmpty.textContent = "none running";
+    this.termEmpty.style.cssText = "color:#5a5a78;font-size:12px";
+    termSection.append(this.termList, this.termEmpty);
 
     this.empty = document.createElement("div");
     this.empty.textContent = "click a mech to inspect";
@@ -155,8 +167,64 @@ export class Sidebar {
     this.killBtn.addEventListener("click", () => this.onKillClick());
     this.detail.append(this.commEl, this.fields, this.killBtn);
 
-    root.append(title, this.canvas, buildSection, this.empty, this.detail);
+    root.append(
+      title,
+      this.canvas,
+      buildSection,
+      termSection,
+      this.empty,
+      this.detail,
+    );
     document.body.appendChild(root);
+  }
+
+  private sectionLabel(text: string): HTMLDivElement {
+    const el = document.createElement("div");
+    el.textContent = text;
+    el.style.cssText =
+      "color:#7a7a95;letter-spacing:2px;font-size:11px;margin-bottom:6px";
+    return el;
+  }
+
+  private span(text: string): HTMLSpanElement {
+    const el = document.createElement("span");
+    el.textContent = text;
+    return el;
+  }
+
+  private icon(size: number): HTMLImageElement {
+    const img = document.createElement("img");
+    img.src = "/isotop-assets/sci-fi/icons/terminal.png";
+    img.width = size;
+    img.height = size;
+    img.style.cssText = "image-rendering:pixelated;flex:none";
+    return img;
+  }
+
+  setTerminals(ids: string[], onOpen: (id: string) => void): void {
+    this.termList.replaceChildren();
+    this.termEmpty.style.display = ids.length ? "none" : "block";
+    for (const id of ids) {
+      const row = document.createElement("button");
+      row.style.cssText = [
+        "display:flex",
+        "align-items:center",
+        "gap:8px",
+        "width:100%",
+        "padding:5px 8px",
+        "background:#15151f",
+        "color:#cfcfe6",
+        "border:1px solid #2c2c44",
+        "border-radius:4px",
+        "font-family:inherit",
+        "font-size:13px",
+        "text-align:left",
+        "cursor:pointer",
+      ].join(";");
+      row.append(this.icon(18), this.span(id));
+      row.addEventListener("click", () => onOpen(id));
+      this.termList.appendChild(row);
+    }
   }
 
   private onMinimapClick(e: PointerEvent) {

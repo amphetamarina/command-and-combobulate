@@ -180,6 +180,7 @@ export class CityScene extends Phaser.Scene {
     for (let i = 0; i < WALL_KEYS.length; i++) {
       this.load.image(WALL_KEYS[i]!, wallAssetUrl(i + 1));
     }
+    this.load.image("icon/terminal", "/isotop-assets/sci-fi/icons/terminal.png");
   }
 
   create() {
@@ -205,6 +206,8 @@ export class CityScene extends Phaser.Scene {
     this.terminals = new TerminalsUI({
       onOpened: (id) => this.addTerminalBuilding(id),
       onClosed: (id) => this.removeTerminalBuilding(id),
+      onList: (ids) =>
+        this.sidebar?.setTerminals(ids, (id) => this.terminals?.open(id)),
     });
     this.sidebar = new Sidebar({
       onNavigate: (x, y) => this.cameras.main.centerOn(x, y),
@@ -752,10 +755,9 @@ export class CityScene extends Phaser.Scene {
     const ty = 1 + Math.floor(i / 5) * 2;
     const pos = tileToScreen(tx, ty);
     const sprite = this.add
-      .image(pos.x, pos.y + TILE_H, "building/kraftwerk/1")
+      .image(pos.x, pos.y + TILE_H, "icon/terminal")
       .setOrigin(0.5, 1)
-      .setDepth(tx + ty + 0.2)
-      .setTint(0x6bffd0);
+      .setDepth(tx + ty + 0.2);
     sprite.setInteractive({ pixelPerfect: true });
     sprite.on("pointerover", () =>
       this.showSimpleTooltip(`terminal ${id} — click to open`),
