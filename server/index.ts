@@ -1,11 +1,13 @@
+import { join } from "node:path";
 import { scanPaths } from "./scanner.ts";
-import { buildWorld, emptyCache, releaseRegion } from "./world-builder.ts";
+import { buildWorld, releaseRegion } from "./world-builder.ts";
 import {
   getRunningBinaryPaths,
   getRunningProcesses,
   ProcSampler,
 } from "./proc.ts";
 import { FileActivitySampler } from "./activity.ts";
+import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import type { World } from "../shared/types.ts";
 
@@ -13,8 +15,10 @@ const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
 const TOPIC = "isotop";
 const WORK_DIR_TTL_MS = 15000;
+const CACHE_PATH =
+  process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
 
-const placements = emptyCache();
+const placements = await loadCache(CACHE_PATH);
 const knownExes = new Set<string>();
 const workDirLastActive = new Map<string, number>();
 const sampler = new ProcSampler();
@@ -27,7 +31,9 @@ type WSData =
 
 async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths);
-  return buildWorld(manifest, placements, [...workDirLastActive.keys()]);
+  const world = buildWorld(manifest, placements, [...workDirLastActive.keys()]);
+  void saveCache(CACHE_PATH, placements);
+  return world;
 }
 
 const server = Bun.serve<WSData>({
