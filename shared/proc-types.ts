@@ -4,6 +4,8 @@ export type ProcessSnapshot = {
   pid: number;
   exe: string;
   comm: string;
+  cpu: number;
+  mem: number;
 };
 
 export type ProcsResponse = {

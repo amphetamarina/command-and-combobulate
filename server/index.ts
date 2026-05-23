@@ -1,6 +1,10 @@
 import { scanPaths } from "./scanner.ts";
 import { buildWorld, emptyCache } from "./world-builder.ts";
-import { getRunningBinaryPaths, getRunningProcesses } from "./proc.ts";
+import {
+  getRunningBinaryPaths,
+  getRunningProcesses,
+  ProcSampler,
+} from "./proc.ts";
 import type { World } from "../shared/types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
@@ -9,6 +13,7 @@ const TOPIC = "isotop";
 
 const placements = emptyCache();
 const knownExes = new Set<string>();
+const sampler = new ProcSampler();
 
 async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths);
@@ -66,7 +71,7 @@ console.log(`[server] regions = directories of currently running binaries`);
 setInterval(async () => {
   if (server.subscriberCount(TOPIC) === 0) return;
   try {
-    const processes = await getRunningProcesses();
+    const processes = await sampler.sample();
     server.publish(
       TOPIC,
       JSON.stringify({

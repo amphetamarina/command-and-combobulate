@@ -2,7 +2,11 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdir, writeFile, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getRunningBinaryPaths, getRunningProcesses } from "./proc.ts";
+import {
+  getRunningBinaryPaths,
+  getRunningProcesses,
+  ProcSampler,
+} from "./proc.ts";
 
 const root = join(tmpdir(), `tty-proc-test-${process.pid}-${Date.now()}`);
 const procPath = join(root, "proc");
@@ -103,4 +107,72 @@ test("getRunningProcesses results are sorted by pid", async () => {
   const procs = await getRunningProcesses(procPath);
   const pids = procs.map((p) => p.pid);
   expect([...pids].sort((a, b) => a - b)).toEqual(pids);
+});
+
+test("getRunningProcesses reports zero cpu and mem when stat files are absent", async () => {
+  const procs = await getRunningProcesses(procPath);
+  for (const p of procs) {
+    expect(p.cpu).toBe(0);
+    expect(p.mem).toBe(0);
+  }
+});
+
+const cpuRoot = join(tmpdir(), `tty-cpu-test-${process.pid}-${Date.now()}`);
+const cpuProc = join(cpuRoot, "proc");
+const cpuBin = join(cpuRoot, "bin");
+
+const statLine = (utime: number, stime: number) =>
+  `1 (proc) S ${Array(10).fill("0").join(" ")} ${utime} ${stime} 0 0\n`;
+
+async function writePid(pid: number, jiffies: number, residentPages: number) {
+  const dir = join(cpuProc, String(pid));
+  await mkdir(dir, { recursive: true });
+  await symlink(cpuBin, join(dir, "exe")).catch(() => {});
+  await writeFile(join(dir, "comm"), `proc-${pid}\n`);
+  await writeFile(join(dir, "stat"), statLine(jiffies, 0));
+  await writeFile(join(dir, "statm"), `0 ${residentPages} 0 0 0 0 0\n`);
+}
+
+beforeAll(async () => {
+  await mkdir(cpuProc, { recursive: true });
+  await writeFile(cpuBin, "x");
+  await writeFile(join(cpuProc, "stat"), "cpu 100 0 100 800 0 0 0\n");
+  await writePid(700, 0, 100);
+  await writePid(800, 0, 4000);
+});
+
+afterAll(async () => {
+  await rm(cpuRoot, { recursive: true, force: true });
+});
+
+test("ProcSampler reports no cpu on the first sample (no prior baseline)", async () => {
+  const sampler = new ProcSampler();
+  const procs = await sampler.sample(cpuProc);
+  for (const p of procs) expect(p.cpu).toBe(0);
+});
+
+test("ProcSampler derives cpu from jiffies consumed between samples", async () => {
+  const sampler = new ProcSampler();
+  await sampler.sample(cpuProc);
+
+  await writeFile(join(cpuProc, "stat"), "cpu 200 0 100 1700 0 0 0\n");
+  await writePid(700, 50, 100);
+  await writePid(800, 0, 4000);
+
+  const procs = await sampler.sample(cpuProc);
+  const busy = procs.find((p) => p.pid === 700)!;
+  const idle = procs.find((p) => p.pid === 800)!;
+  expect(busy.cpu).toBeGreaterThan(0);
+  expect(busy.cpu).toBeLessThanOrEqual(1);
+  expect(idle.cpu).toBe(0);
+});
+
+test("ProcSampler reports memory as a fraction of total RAM", async () => {
+  const sampler = new ProcSampler();
+  const procs = await sampler.sample(cpuProc);
+  const small = procs.find((p) => p.pid === 700)!;
+  const large = procs.find((p) => p.pid === 800)!;
+  expect(large.mem).toBeGreaterThan(small.mem);
+  expect(small.mem).toBeGreaterThan(0);
+  expect(large.mem).toBeLessThanOrEqual(1);
 });
