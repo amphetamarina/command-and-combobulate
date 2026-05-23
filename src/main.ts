@@ -1,3 +1,5 @@
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/600.css";
 import Phaser from "phaser";
 import { CityScene } from "./scene.ts";
 import { fetchWorld } from "./api.ts";

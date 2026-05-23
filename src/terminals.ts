@@ -65,7 +65,7 @@ export class TerminalsUI {
       "box-shadow:0 8px 32px rgba(0,0,0,0.6)",
       `z-index:${++this.zTop}`,
       "overflow:hidden",
-      "font-family:ui-monospace,monospace",
+      "font-family:'JetBrains Mono',ui-monospace,monospace",
     ].join(";");
     root.addEventListener("pointerdown", () => this.focus(win));
 
@@ -120,6 +120,7 @@ export class TerminalsUI {
       cols: COLS,
       rows: ROWS,
       fontSize: 13,
+      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       cursorBlink: true,
       theme: { background: "#0b0b14", foreground: "#d8d8ec" },
     });

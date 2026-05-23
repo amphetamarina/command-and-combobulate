@@ -80,9 +80,9 @@ export class Sidebar {
       "background:linear-gradient(#15151f,#101019)",
       "border-left:2px solid #2c2c44",
       "box-shadow:-4px 0 16px rgba(0,0,0,0.5)",
-      "font-family:ui-monospace,monospace",
+      "font-family:'JetBrains Mono',ui-monospace,monospace",
       "color:#d8d8ec",
-      "font-size:12px",
+      "font-size:13px",
       "z-index:50",
       "user-select:none",
     ].join(";");
@@ -90,7 +90,7 @@ export class Sidebar {
     const title = document.createElement("div");
     title.textContent = "ISOTOP";
     title.style.cssText =
-      "letter-spacing:3px;font-size:14px;color:#6bb6ff;text-align:center;margin-bottom:10px";
+      "letter-spacing:4px;font-size:17px;color:#6bb6ff;text-align:center;margin-bottom:10px";
 
     this.canvas = document.createElement("canvas");
     this.canvas.width = MINIMAP_SIZE;
@@ -160,7 +160,7 @@ export class Sidebar {
       "border:1px solid #7a3a3a",
       "border-radius:3px",
       "font-family:inherit",
-      "font-size:12px",
+      "font-size:13px",
       "letter-spacing:1px",
       "cursor:pointer",
     ].join(";");
@@ -182,7 +182,7 @@ export class Sidebar {
     const el = document.createElement("div");
     el.textContent = text;
     el.style.cssText =
-      "color:#7a7a95;letter-spacing:2px;font-size:11px;margin-bottom:6px";
+      "color:#7a7a95;letter-spacing:2px;font-size:12px;margin-bottom:6px";
     return el;
   }
 
