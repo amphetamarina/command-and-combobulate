@@ -43,8 +43,8 @@ export function regionCenter(r: Region): Pt {
 const LINK_BASE = 0x0c0710;
 const LINK_CORE = 0xe28bab;
 
-// An EXAPUNKS-style cable between two island centers. Drawn below the island
-// tops so it slips under the edges and only shows across the gaps.
+// A cable between two island centers, drawn below the island tops so it slips
+// under the edges and only shows across the gaps.
 export function drawCable(
   g: Phaser.GameObjects.Graphics,
   a: Pt,
@@ -66,8 +66,8 @@ export function drawIslandSides(g: Phaser.GameObjects.Graphics, r: Region): void
   poly(g, [S, E, down(E), down(S)]);
 }
 
-// The island's flat top: a rose panel with a faint isometric grid, the way an
-// EXAPUNKS host shows its grid spaces.
+// The island's flat top: a rose panel with a faint isometric grid that reads
+// like a host's grid spaces.
 export function drawIslandTop(g: Phaser.GameObjects.Graphics, r: Region): void {
   const { N, E, S, W } = corners(r);
   g.fillStyle(r.kind === "work" ? PANEL_WORK : PANEL_NORMAL, 1);
