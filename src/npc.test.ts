@@ -1,8 +1,11 @@
 import { test, expect } from "bun:test";
 import {
-  npcSpriteKey,
+  GENERIC_ROBOTS,
+  headingFromScreen,
   npcWorldPosition,
-  NPC_VARIANT_KEYS,
+  robotForBuilding,
+  rowForHeading,
+  SHEET_ROW_DIRS,
 } from "./npc.ts";
 import type { BuildingDescriptor } from "../shared/types.ts";
 
@@ -16,18 +19,37 @@ const building: BuildingDescriptor = {
   size: 1,
 };
 
-test("npcSpriteKey is deterministic for a given pid", () => {
-  for (let i = 0; i < 100; i++) {
-    expect(npcSpriteKey(42)).toBe(npcSpriteKey(42));
-  }
+test("robotForBuilding picks the matching tool robot", () => {
+  expect(robotForBuilding("tool/claude", 1)).toBe("claude");
+  expect(robotForBuilding("tool/codex", 2)).toBe("codex");
+  expect(robotForBuilding("tool/opencode", 3)).toBe("opencode");
 });
 
-test("npcSpriteKey distributes across variants", () => {
+test("robotForBuilding falls back to a generic chassis", () => {
+  expect(robotForBuilding("building/foerderturm/1", 0)).toBe(GENERIC_ROBOTS[0]);
+  expect(robotForBuilding("tool/bun", 0)).toBe(GENERIC_ROBOTS[0]);
+});
+
+test("robotForBuilding spreads unknown pids across generic chassis", () => {
   const seen = new Set<string>();
   for (let pid = 0; pid < 30; pid++) {
-    seen.add(npcSpriteKey(pid));
+    seen.add(robotForBuilding("building/foerderturm/1", pid));
   }
-  expect(seen.size).toBe(NPC_VARIANT_KEYS.length);
+  expect(seen.size).toBe(GENERIC_ROBOTS.length);
+});
+
+test("headingFromScreen maps screen vectors to sheet rows", () => {
+  expect(headingFromScreen(1, 0)).toBe("E");
+  expect(headingFromScreen(0, 1)).toBe("S");
+  expect(headingFromScreen(-1, 0)).toBe("W");
+  expect(headingFromScreen(0, -1)).toBe("N");
+  expect(headingFromScreen(0, 0)).toBe("S");
+});
+
+test("rowForHeading returns the sheet row index for each heading", () => {
+  for (let row = 0; row < SHEET_ROW_DIRS.length; row++) {
+    expect(rowForHeading(SHEET_ROW_DIRS[row]!)).toBe(row);
+  }
 });
 
 test("npcWorldPosition is deterministic for a given pid and building", () => {

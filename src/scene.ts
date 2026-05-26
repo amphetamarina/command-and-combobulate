@@ -13,19 +13,29 @@ import { TerminalsUI } from "./terminals.ts";
 import {
   drawIslandSides,
   drawIslandEdges,
+  drawIslandLinks,
   paintIslandTop,
   FLOOR_COUNT,
 } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
-  NPC_VARIANT_KEYS,
+  NAMED_ROBOTS,
+  ROBOT_COLS,
+  ROBOT_FRAME_H,
+  ROBOT_FRAME_W,
+  ROBOT_KEYS,
+  SHEET_ROW_DIRS,
   WANDER_OFFSETS,
-  npcSpriteKey,
+  headingFromScreen,
   npcWorldPosition,
-  type NpcSpriteKey,
+  robotForBuilding,
+  robotTextureKey,
+  rowForHeading,
+  type RobotKey,
 } from "./npc.ts";
 
 const GROUND_DEPTH = -20;
+const LINK_DEPTH = -19.5;
 const FLOOR_DEPTH = -19;
 const EDGE_DEPTH = -18;
 const LABEL_DEPTH = 100000;
@@ -53,7 +63,9 @@ const WRITE_COLOR = "#ffae5a";
 
 type NpcState = {
   container: Phaser.GameObjects.Container;
-  mech: Phaser.GameObjects.Image;
+  mech: Phaser.GameObjects.Sprite;
+  robotTex: string;
+  heading: (typeof SHEET_ROW_DIRS)[number];
   cpuFill: Phaser.GameObjects.Rectangle;
   memFill: Phaser.GameObjects.Rectangle;
   badge: Phaser.GameObjects.Text;
@@ -117,10 +129,11 @@ function buildingAssetUrl(key: BuildingSpriteKey): string {
   return `/isotop-assets/sci-fi/buildings/${dir}/${name}.png`;
 }
 
-function npcAssetUrl(key: NpcSpriteKey): string {
-  const variant = key.split("/")[2]!;
-  const dir = encodeURIComponent(`step ${variant}`);
-  return `/isotop-assets/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
+function robotAssetUrl(key: RobotKey): string {
+  if ((NAMED_ROBOTS as readonly string[]).includes(key)) {
+    return `/isotop-assets/sci-fi/units/Robots/Spritesheets/${key}-8dir-walk-hover.png`;
+  }
+  return `/isotop-assets/sci-fi/units/Mech/Spritesheets/${key}-8dir-walk-hover.png`;
 }
 
 function terrainAssetUrl(index: number): string {
@@ -135,6 +148,7 @@ export class CityScene extends Phaser.Scene {
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
   private sidesGraphics: Phaser.GameObjects.Graphics | null = null;
+  private linksGraphics: Phaser.GameObjects.Graphics | null = null;
   private edgesGraphics: Phaser.GameObjects.Graphics | null = null;
   private groundBlitters = new Map<string, Phaser.GameObjects.Blitter>();
   private regionLabels: Phaser.GameObjects.Text[] = [];
@@ -168,8 +182,11 @@ export class CityScene extends Phaser.Scene {
     for (const key of TOOL_SPRITE_KEYS) {
       this.load.image(key, buildingAssetUrl(key));
     }
-    for (const key of NPC_VARIANT_KEYS) {
-      this.load.image(key, npcAssetUrl(key));
+    for (const key of ROBOT_KEYS) {
+      this.load.spritesheet(robotTextureKey(key), robotAssetUrl(key), {
+        frameWidth: ROBOT_FRAME_W,
+        frameHeight: ROBOT_FRAME_H,
+      });
     }
     for (let i = 0; i < FLOOR_COUNT; i++) {
       this.load.image(STATION_KEYS[i]!, terrainAssetUrl(i + 1));
@@ -185,7 +202,9 @@ export class CityScene extends Phaser.Scene {
     this.applyCameraViewport();
     this.scale.on("resize", () => this.applyCameraViewport());
 
+    this.createRobotAnims();
     this.sidesGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
+    this.linksGraphics = this.add.graphics().setDepth(LINK_DEPTH);
     this.edgesGraphics = this.add.graphics().setDepth(EDGE_DEPTH);
     this.renderRegions();
 
@@ -236,6 +255,24 @@ export class CityScene extends Phaser.Scene {
 
 
 
+  private createRobotAnims() {
+    for (const key of ROBOT_KEYS) {
+      const tex = robotTextureKey(key);
+      for (let row = 0; row < SHEET_ROW_DIRS.length; row++) {
+        const start = row * ROBOT_COLS;
+        this.anims.create({
+          key: `${tex}/${row}`,
+          frames: this.anims.generateFrameNumbers(tex, {
+            start,
+            end: start + ROBOT_COLS - 1,
+          }),
+          frameRate: 8,
+          repeat: -1,
+        });
+      }
+    }
+  }
+
   private groundBlitterFor(key: string): Phaser.GameObjects.Blitter {
     let b = this.groundBlitters.get(key);
     if (!b) {
@@ -246,13 +283,18 @@ export class CityScene extends Phaser.Scene {
   }
 
   private renderRegions() {
-    if (!this.sidesGraphics || !this.edgesGraphics) return;
+    if (!this.sidesGraphics || !this.edgesGraphics || !this.linksGraphics) {
+      return;
+    }
     this.sidesGraphics.clear();
+    this.linksGraphics.clear();
     this.edgesGraphics.clear();
     for (const b of this.groundBlitters.values()) b.clear();
     for (const label of this.regionLabels) label.destroy();
     this.regionLabels = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
+
+    drawIslandLinks(this.linksGraphics, this.regions);
 
     const ordered = [...this.regions].sort(
       (a, b) => a.origin.x + a.origin.y - (b.origin.x + b.origin.y),
@@ -373,7 +415,9 @@ export class CityScene extends Phaser.Scene {
     building: BuildingDescriptor,
   ): NpcState {
     const spawn = npcWorldPosition(p.pid, building);
-    const mech = this.add.image(0, 0, npcSpriteKey(p.pid)).setOrigin(0.5, 1);
+    const robotTex = robotTextureKey(robotForBuilding(building.spriteKey, p.pid));
+    const mech = this.add.sprite(0, 0, robotTex).setOrigin(0.5, 1);
+    mech.setFrame(rowForHeading("S") * ROBOT_COLS);
     mech.setInteractive({ pixelPerfect: true });
     mech.on("pointerover", () => this.showProcTooltip(state.latest));
     mech.on("pointerout", () => this.hideTooltip());
@@ -426,6 +470,8 @@ export class CityScene extends Phaser.Scene {
     const state: NpcState = {
       container,
       mech,
+      robotTex,
+      heading: "S",
       cpuFill,
       memFill,
       badge,
@@ -451,6 +497,20 @@ export class CityScene extends Phaser.Scene {
   private npcScreen(tile: { x: number; y: number }) {
     const s = tileToScreen(tile.x, tile.y);
     return { x: s.x, y: s.y + TILE_H / 2 };
+  }
+
+  private faceAndWalk(
+    state: NpcState,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ) {
+    state.heading = headingFromScreen(to.x - from.x, to.y - from.y);
+    state.mech.play(`${state.robotTex}/${rowForHeading(state.heading)}`, true);
+  }
+
+  private standStill(state: NpcState) {
+    state.mech.stop();
+    state.mech.setFrame(rowForHeading(state.heading) * ROBOT_COLS);
   }
 
 
@@ -490,6 +550,7 @@ export class CityScene extends Phaser.Scene {
   ) {
     const start = { x: state.currentTile.x, y: state.currentTile.y };
     const dest = this.npcScreen(tile);
+    this.faceAndWalk(state, { x: state.container.x, y: state.container.y }, dest);
     this.tweens.add({
       targets: state.container,
       x: dest.x,
@@ -505,12 +566,14 @@ export class CityScene extends Phaser.Scene {
       onComplete: () => {
         state.currentTile = { x: tile.x, y: tile.y };
         state.container.setDepth(tile.x + tile.y + 0.5);
+        this.standStill(state);
         onArrive();
       },
     });
   }
 
   private workInPlace(state: NpcState) {
+    this.standStill(state);
     this.tweens.add({
       targets: state.mech,
       scaleY: 0.9,
@@ -548,11 +611,13 @@ export class CityScene extends Phaser.Scene {
       y: state.building.tile.y + off.y,
     };
     const targetScreen = tileToScreen(targetTile.x, targetTile.y);
+    const dest = { x: targetScreen.x, y: targetScreen.y + TILE_H / 2 };
     const startTile = { x: state.currentTile.x, y: state.currentTile.y };
+    this.faceAndWalk(state, { x: state.container.x, y: state.container.y }, dest);
     this.tweens.add({
       targets: state.container,
-      x: targetScreen.x,
-      y: targetScreen.y + TILE_H / 2,
+      x: dest.x,
+      y: dest.y,
       duration: WANDER_MIN_MS + Math.random() * (WANDER_MAX_MS - WANDER_MIN_MS),
       ease: "Sine.easeInOut",
       onUpdate: (tween) => {

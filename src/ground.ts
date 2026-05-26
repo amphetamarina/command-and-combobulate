@@ -33,6 +33,43 @@ function floorVariant(x: number, y: number): number {
   return Math.abs((x * 73856093) ^ (y * 19349663)) % FLOOR_COUNT;
 }
 
+function centerScreen(r: Region): Pt {
+  return tileToScreen(r.origin.x + r.size.w / 2, r.origin.y + r.size.h / 2);
+}
+
+// The deepest ancestor region whose path contains this one's path.
+function parentOf(r: Region, regions: Region[]): Region | null {
+  let best: Region | null = null;
+  for (const o of regions) {
+    if (o === r || o.path === r.path) continue;
+    const prefix = o.path.endsWith("/") ? o.path : `${o.path}/`;
+    if (!r.path.startsWith(prefix)) continue;
+    if (!best || o.path.length > best.path.length) best = o;
+  }
+  return best;
+}
+
+const LINK_BASE = 0x1b2630;
+const LINK_CORE = 0x3a5564;
+
+// EXAPUNKS-style cables linking each island to its parent folder. Drawn below
+// the island tops so they slip under the edges and only show across the gaps.
+export function drawIslandLinks(
+  g: Phaser.GameObjects.Graphics,
+  regions: Region[],
+): void {
+  for (const r of regions) {
+    const parent = parentOf(r, regions);
+    if (!parent) continue;
+    const a = centerScreen(r);
+    const b = centerScreen(parent);
+    g.lineStyle(4, LINK_BASE, 0.9);
+    g.lineBetween(a.x, a.y, b.x, b.y);
+    g.lineStyle(1.5, LINK_CORE, 0.85);
+    g.lineBetween(a.x, a.y, b.x, b.y);
+  }
+}
+
 // The extruded slab sides, drawn below the tiled top.
 export function drawIslandSides(g: Phaser.GameObjects.Graphics, r: Region): void {
   const { E, S, W } = corners(r);

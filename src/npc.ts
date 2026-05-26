@@ -1,16 +1,58 @@
 import type { BuildingDescriptor } from "../shared/types.ts";
 import { TILE_H, tileToScreen, type ScreenPoint } from "./iso.ts";
 
-export const NPC_VARIANT_KEYS = [
-  "npc/mech/1",
-  "npc/mech/2",
-  "npc/mech/3",
+// Each walk spritesheet is 4 columns x 8 rows of 58x64 frames: one row per
+// facing, four frames of walk-hover per row.
+export const ROBOT_FRAME_W = 58;
+export const ROBOT_FRAME_H = 64;
+export const ROBOT_COLS = 4;
+
+// Tools with bespoke robot art; every other process walks a generic chassis.
+export const NAMED_ROBOTS = ["claude", "codex", "opencode"] as const;
+export const GENERIC_ROBOTS = ["generic-1", "generic-2", "generic-3"] as const;
+export const ROBOT_KEYS = [...NAMED_ROBOTS, ...GENERIC_ROBOTS] as const;
+export type RobotKey = (typeof ROBOT_KEYS)[number];
+
+export function robotTextureKey(key: RobotKey): string {
+  return `robot/${key}`;
+}
+
+export function robotForBuilding(spriteKey: string, pid: number): RobotKey {
+  if (spriteKey.startsWith("tool/")) {
+    const tool = spriteKey.slice("tool/".length);
+    if ((NAMED_ROBOTS as readonly string[]).includes(tool)) {
+      return tool as RobotKey;
+    }
+  }
+  return GENERIC_ROBOTS[pid % GENERIC_ROBOTS.length]!;
+}
+
+// Row order of the walk sheets, top to bottom: each entry is the compass
+// heading that row depicts. Flip entries here if a robot faces the wrong way.
+export const SHEET_ROW_DIRS = [
+  "S",
+  "SW",
+  "W",
+  "NW",
+  "N",
+  "NE",
+  "E",
+  "SE",
 ] as const;
+type Heading = (typeof SHEET_ROW_DIRS)[number];
 
-export type NpcSpriteKey = (typeof NPC_VARIANT_KEYS)[number];
+// Screen-space compass, clockwise from due-east (the +x screen axis).
+const COMPASS: readonly Heading[] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
 
-export function npcSpriteKey(pid: number): NpcSpriteKey {
-  return NPC_VARIANT_KEYS[pid % NPC_VARIANT_KEYS.length]!;
+export function headingFromScreen(dx: number, dy: number): Heading {
+  if (dx === 0 && dy === 0) return "S";
+  const step = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  return COMPASS[((step % 8) + 8) % 8]!;
+}
+
+export function rowForHeading(h: Heading): number {
+  const r = SHEET_ROW_DIRS.indexOf(h);
+  return r < 0 ? 0 : r;
 }
 
 const ADJACENT_OFFSETS: ReadonlyArray<{ x: number; y: number }> = [
