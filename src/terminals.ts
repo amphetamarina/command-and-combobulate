@@ -1,4 +1,5 @@
 import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { createTerminal, killTerminal, termSocketUrl } from "./api.ts";
 
@@ -12,6 +13,7 @@ type Pane = {
   id: string;
   root: HTMLDivElement;
   term: Terminal;
+  fit: FitAddon;
   ws: WebSocket;
 };
 
@@ -27,7 +29,24 @@ export class TerminalsUI {
   private order: string[] = [];
   private activeId: string | null = null;
 
-  constructor(private opts: TerminalsOptions) {}
+  constructor(private opts: TerminalsOptions) {
+    window.addEventListener("resize", () => this.fitActive());
+  }
+
+  private fitActive(): void {
+    if (!this.activeId) return;
+    const pane = this.panes.get(this.activeId);
+    if (pane) this.safeFit(pane);
+  }
+
+  private safeFit(pane: Pane): void {
+    if (pane.root.style.display === "none") return;
+    try {
+      pane.fit.fit();
+    } catch {
+      /* container not measurable yet */
+    }
+  }
 
   async spawn(): Promise<void> {
     const id = await createTerminal();
@@ -73,18 +92,27 @@ export class TerminalsUI {
       fontSize: 13,
       fontFamily: "'JetBrains Mono', ui-monospace, monospace",
       cursorBlink: true,
-      theme: { background: "#0b0b14", foreground: "#d8d8ec" },
+      theme: {
+        background: "#150d13",
+        foreground: "#f0d4e0",
+        cursor: "#ff9ec7",
+        selectionBackground: "#5a3a4a",
+      },
     });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
     term.open(root);
 
-    const ws = new WebSocket(termSocketUrl(id));
+    const pane: Pane = { id, root, term, fit, ws: new WebSocket(termSocketUrl(id)) };
+    const ws = pane.ws;
     ws.addEventListener("message", (e) => term.write(e.data as string));
     term.onData((d) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(d);
     });
     ws.addEventListener("close", () => term.write("\r\n[disconnected]\r\n"));
 
-    this.panes.set(id, { id, root, term, ws });
+    this.panes.set(id, pane);
+    requestAnimationFrame(() => this.safeFit(pane));
   }
 
   private setActive(id: string | null): void {
@@ -92,7 +120,12 @@ export class TerminalsUI {
     for (const pane of this.panes.values()) {
       pane.root.style.display = pane.id === id ? "block" : "none";
     }
-    if (id) this.panes.get(id)?.term.focus();
+    const active = id ? this.panes.get(id) : undefined;
+    if (active) {
+      // A pane can only be measured once it is the visible one.
+      this.safeFit(active);
+      active.term.focus();
+    }
     this.emitList();
   }
 

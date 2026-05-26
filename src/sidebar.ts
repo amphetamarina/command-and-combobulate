@@ -22,11 +22,11 @@ export class Sidebar {
       "display:flex",
       "flex-direction:column",
       "gap:10px",
-      "background:linear-gradient(#15151f,#101019)",
-      "border-right:2px solid #2c2c44",
+      "background:linear-gradient(#241620,#1a121b)",
+      "border-right:2px solid #4a2e3e",
       "box-shadow:4px 0 16px rgba(0,0,0,0.5)",
       "font-family:'JetBrains Mono',ui-monospace,monospace",
-      "color:#d8d8ec",
+      "color:#f0d4e0",
       "font-size:13px",
       "z-index:50",
     ].join(";");
@@ -35,17 +35,17 @@ export class Sidebar {
     header.style.cssText =
       "display:flex;align-items:center;gap:12px;flex:none";
     const title = document.createElement("div");
-    title.textContent = "ISOTOP";
-    title.style.cssText = "letter-spacing:4px;font-size:17px;color:#6bb6ff";
+    title.textContent = "AIso";
+    title.style.cssText = "letter-spacing:4px;font-size:17px;color:#ff9ec7";
     const buildBtn = document.createElement("button");
     buildBtn.style.cssText = [
       "display:flex",
       "align-items:center",
       "gap:8px",
       "padding:6px 12px",
-      "background:#16263a",
-      "color:#7fe0d0",
-      "border:1px solid #2c4a5a",
+      "background:#3a2230",
+      "color:#ffb3d1",
+      "border:1px solid #5a3a4a",
       "border-radius:4px",
       "font-family:inherit",
       "font-size:13px",
@@ -63,10 +63,10 @@ export class Sidebar {
     this.terminalHost.style.cssText = [
       "flex:1",
       "min-height:0",
-      "background:#0b0b14",
-      "border:1px solid #2c2c44",
+      "background:#150d13",
+      "border:1px solid #4a2e3e",
       "border-radius:5px",
-      "overflow:auto",
+      "overflow:hidden",
       "padding:6px",
     ].join(";");
 
@@ -104,10 +104,10 @@ export class Sidebar {
         "align-items:center",
         "gap:6px",
         "padding:4px 8px",
-        `background:${active ? "#23344a" : "#15151f"}`,
-        `border:1px solid ${active ? "#3a6a8a" : "#2c2c44"}`,
+        `background:${active ? "#4a2a3a" : "#241620"}`,
+        `border:1px solid ${active ? "#8a4a6a" : "#4a2e3e"}`,
         "border-radius:4px",
-        `color:${active ? "#cfeaff" : "#9a9ab5"}`,
+        `color:${active ? "#ffd0e6" : "#c89ab0"}`,
         "font-size:13px",
         "cursor:pointer",
       ].join(";");
@@ -115,7 +115,7 @@ export class Sidebar {
       label.style.cursor = "pointer";
       label.addEventListener("click", () => onOpen(id));
       const close = this.span("×");
-      close.style.cssText = "cursor:pointer;color:#ff8a7a;font-weight:bold";
+      close.style.cssText = "cursor:pointer;color:#ff8aa8;font-weight:bold";
       close.addEventListener("click", (e) => {
         e.stopPropagation();
         onClose(id);
