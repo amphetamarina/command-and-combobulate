@@ -1,11 +1,10 @@
 # AIso
 
 `top`, but isometric — a live pixel-art map of what your terminals are
-running. Build a terminal inside AIso and every process it spawns becomes
-a robot walking an EXAPUNKS-style host: folders are rose panels wired
-together by cables, binaries are buildings, and processes are robots that
-walk to the folders they touch. (The repository and package are still
-named `isotop`.)
+running. Build a terminal inside AIso and it becomes an EXAPUNKS-style host
+island; every process it spawns is a robot living on that island, and the
+folders its agents touch become islands wired to it by cables. (The
+repository and package are still named `isotop`.)
 
 ## Quick start
 
@@ -24,18 +23,16 @@ running binaries, then streams live updates over a WebSocket.
 
 ## What you see
 
-- **Folder islands.** Each directory of interest is a flat rose panel with
-  a faint isometric grid and beveled edges, floating on dark and labelled
-  with its path. A cable links each island to its parent folder.
-- **Robots = processes.** One per process descended from a terminal you
-  built here. `claude`, `codex`, and `opencode` walk their own robot;
-  everything else gets a generic chassis. Robots wander by their building
-  with live CPU/memory bars, and when a process reads or writes a folder
-  its robot walks there as the folder lights up as a temporary work
-  island.
-- **Buildings = binaries.** One per unique running executable, with art
-  derived from the SHA-256 of its contents; known tools get dedicated
-  sprites.
+- **Terminal islands.** Each terminal you build is a flat rose panel with a
+  faint isometric grid and beveled edges, labelled with the shell's working
+  directory. Its processes live here.
+- **Folder islands.** Each folder an agent touches becomes its own island,
+  wired to the terminal whose process is working there by a cable.
+- **Robots = processes.** One per process descending from a terminal.
+  `claude`, `codex`, and `opencode` walk their own robot; everything else
+  gets a generic chassis. Robots wander their terminal island with live
+  CPU/memory bars, and when a process reads or writes a folder its robot
+  walks to that folder's island and back.
 - **Left sidebar.** The AIso logo, a "+ Terminal" button, a tab per open
   terminal, and the active terminal docked inline — a real shell over
   `node-pty`, sized to the sidebar and reflowing live, so Claude Code,
@@ -50,10 +47,11 @@ Pan: drag · Zoom: wheel · Hover a building or robot for details.
 
 ## Architecture
 
-A Node backend reads `/proc`, hashes binaries, builds a deterministic
-world, and streams the world, process snapshots, and terminal I/O over
-HTTP + WebSocket (the `ws` library). A Vite + Phaser 3 frontend renders
-the isometric scene; terminals run on `node-pty`. See
+A Node backend reads `/proc`, attributes each process to the in-app
+terminal it descends from, builds the island world (terminals + the
+folders their agents touch), and streams the world, process snapshots, and
+terminal I/O over HTTP + WebSocket (the `ws` library). A Vite + Phaser 3
+frontend renders the isometric scene; terminals run on `node-pty`. See
 [`docs/architecture.md`](docs/architecture.md).
 
 ```
@@ -78,6 +76,6 @@ bun run build       # production build into dist/
 
 ## Not yet
 
-- Giving each terminal its own island, wired to the folders its agents
-  touch, is the next layout step.
-- The sprite pack ships richer per-tool art than the world currently uses.
+- The claude robot art is a top-down sprite, out of style with the
+  3/4-view codex/opencode robots; it needs regenerating.
+- Distinguishing a main agent from its subagents visually (size/labels).
