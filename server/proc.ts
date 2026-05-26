@@ -129,6 +129,42 @@ function keep(procs: RawProcess[], seeds?: number[]): RawProcess[] {
   return procs.filter((p) => wanted.has(p.pid));
 }
 
+export type TerminalRef = { id: string; pid: number };
+
+// Map each process to the id of the terminal it descends from. The first
+// terminal in the list to claim a pid wins, which is fine since process
+// trees do not overlap across terminals.
+function attribution(
+  procs: RawProcess[],
+  terminals: TerminalRef[],
+): Map<number, string> {
+  const byPid = new Map<number, string>();
+  for (const t of terminals) {
+    for (const pid of descendantsOf(procs, [t.pid])) {
+      if (!byPid.has(pid)) byPid.set(pid, t.id);
+    }
+  }
+  return byPid;
+}
+
+function snapshotOf(
+  p: RawProcess,
+  terminal: string | null,
+  cpu: number,
+  ram: number,
+): ProcessSnapshot {
+  return {
+    pid: p.pid,
+    ppid: p.ppid,
+    terminal,
+    exe: p.exe,
+    comm: p.comm,
+    cpu,
+    mem: ram > 0 ? clamp01(p.rssBytes / ram) : 0,
+    activity: null,
+  };
+}
+
 export async function getRunningBinaryPaths(
   procPath = "/proc",
   seeds?: number[],
@@ -141,19 +177,14 @@ export async function getRunningBinaryPaths(
 
 export async function getRunningProcesses(
   procPath = "/proc",
-  seeds?: number[],
+  terminals?: TerminalRef[],
 ): Promise<ProcessSnapshot[]> {
   const { procs } = await readRawProcesses(procPath);
   const ram = totalmem();
-  return keep(procs, seeds)
-    .map((p) => ({
-      pid: p.pid,
-      exe: p.exe,
-      comm: p.comm,
-      cpu: 0,
-      mem: ram > 0 ? clamp01(p.rssBytes / ram) : 0,
-      activity: null,
-    }))
+  const attr = terminals ? attribution(procs, terminals) : null;
+  const kept = attr ? procs.filter((p) => attr.has(p.pid)) : procs;
+  return kept
+    .map((p) => snapshotOf(p, attr?.get(p.pid) ?? null, 0, ram))
     .sort((a, b) => a.pid - b.pid);
 }
 
@@ -162,25 +193,23 @@ export class ProcSampler {
   private prevTotal = 0;
   private readonly cores = Math.max(1, cpus().length);
 
-  async sample(procPath = "/proc", seeds?: number[]): Promise<ProcessSnapshot[]> {
+  async sample(
+    procPath = "/proc",
+    terminals?: TerminalRef[],
+  ): Promise<ProcessSnapshot[]> {
     const { procs, totalJiffies } = await readRawProcesses(procPath);
     const ram = totalmem();
     const totalDelta = totalJiffies - this.prevTotal;
+    const attr = terminals ? attribution(procs, terminals) : null;
+    const kept = attr ? procs.filter((p) => attr.has(p.pid)) : procs;
 
-    const snapshots = keep(procs, seeds).map((p) => {
+    const snapshots = kept.map((p) => {
       const prev = this.prevJiffies.get(p.pid);
       const cpu =
         prev !== undefined && totalDelta > 0
           ? clamp01(((p.jiffies - prev) / totalDelta) * this.cores)
           : 0;
-      return {
-        pid: p.pid,
-        exe: p.exe,
-        comm: p.comm,
-        cpu,
-        mem: ram > 0 ? clamp01(p.rssBytes / ram) : 0,
-        activity: null,
-      };
+      return snapshotOf(p, attr?.get(p.pid) ?? null, cpu, ram);
     });
 
     this.prevJiffies = new Map(procs.map((p) => [p.pid, p.jiffies]));

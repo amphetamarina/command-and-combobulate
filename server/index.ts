@@ -1,13 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { scanPaths, type HashCache } from "./scanner.ts";
-import { buildWorld, releaseRegion } from "./world-builder.ts";
-import {
-  getRunningBinaryPaths,
-  getRunningProcesses,
-  ProcSampler,
-} from "./proc.ts";
+import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
+import { getRunningProcesses, ProcSampler } from "./proc.ts";
 import { FileActivitySampler } from "./activity.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
@@ -20,17 +16,31 @@ const CACHE_PATH =
   process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
 
 const placements = await loadCache(CACHE_PATH);
-const hashCache: HashCache = new Map();
-const knownExes = new Set<string>();
 const workDirLastActive = new Map<string, number>();
+const knownTerminals = new Set<string>();
 const sampler = new ProcSampler();
 const activitySampler = new FileActivitySampler();
 const terminals = new TerminalManager();
 const liveClients = new Set<WebSocket>();
 
-async function buildWorldFor(paths: string[]): Promise<World> {
-  const manifest = await scanPaths(paths, hashCache);
-  const world = buildWorld(manifest, placements, [...workDirLastActive.keys()]);
+// A terminal island is labelled with the shell's current working directory.
+async function terminalInfos(): Promise<TerminalInfo[]> {
+  return Promise.all(
+    terminals.refs().map(async ({ id, pid }) => {
+      let label = id;
+      try {
+        label = await readlink(`/proc/${pid}/cwd`);
+      } catch {
+        /* keep id */
+      }
+      return { id, label };
+    }),
+  );
+}
+
+async function buildWorldFor(): Promise<World> {
+  const infos = await terminalInfos();
+  const world = buildWorld(infos, [...workDirLastActive.keys()], placements);
   void saveCache(CACHE_PATH, placements);
   return world;
 }
@@ -90,18 +100,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (pathname === "/world") {
     const started = performance.now();
-    const paths = await getRunningBinaryPaths("/proc", terminals.pids());
-    for (const p of paths) knownExes.add(p);
-    const world = await buildWorldFor(paths);
+    const world = await buildWorldFor();
     const elapsedMs = Math.round(performance.now() - started);
     console.log(
-      `[world] ${paths.length} unique exes -> ${world.buildings.length} buildings across ${world.regions.length} regions in ${elapsedMs}ms`,
+      `[world] ${world.regions.length} islands in ${elapsedMs}ms`,
     );
     return sendJson(res, 200, world);
   }
 
   if (pathname === "/procs") {
-    const processes = await getRunningProcesses("/proc", terminals.pids());
+    const processes = await getRunningProcesses("/proc", terminals.refs());
     return sendJson(res, 200, { capturedAt: Date.now(), processes });
   }
 
@@ -185,13 +193,13 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 httpServer.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
-  console.log(`[server] regions = directories of currently running binaries`);
+  console.log(`[server] islands = your terminals and the folders their agents touch`);
 });
 
 setInterval(async () => {
   if (liveClients.size === 0) return;
   try {
-    const processes = await sampler.sample("/proc", terminals.pids());
+    const processes = await sampler.sample("/proc", terminals.refs());
     const activity = await activitySampler.sample(processes.map((p) => p.pid));
     for (const p of processes) p.activity = activity.get(p.pid) ?? null;
 
@@ -200,12 +208,6 @@ setInterval(async () => {
     );
 
     const now = Date.now();
-    const liveExes = new Set(processes.map((p) => p.exe));
-    const freshExes: string[] = [];
-    for (const e of liveExes) {
-      if (!knownExes.has(e)) freshExes.push(e);
-    }
-
     const freshWorkDirs: string[] = [];
     for (const a of activity.values()) {
       if (!workDirLastActive.has(a.dir)) freshWorkDirs.push(a.dir);
@@ -220,24 +222,31 @@ setInterval(async () => {
       }
     }
 
+    const liveTerms = new Set(terminals.list());
+    const freshTerms = [...liveTerms].filter((id) => !knownTerminals.has(id));
+    const goneTerms = [...knownTerminals].filter((id) => !liveTerms.has(id));
+    for (const id of goneTerms) {
+      knownTerminals.delete(id);
+      releaseRegion(placements, id);
+    }
+    for (const id of freshTerms) knownTerminals.add(id);
+
     const worldChanged =
-      freshExes.length > 0 ||
+      freshTerms.length > 0 ||
+      goneTerms.length > 0 ||
       freshWorkDirs.length > 0 ||
       expiredWorkDirs.length > 0;
     if (worldChanged) {
-      for (const e of freshExes) knownExes.add(e);
-      const world = await buildWorldFor([...knownExes]);
-      const freshSet = new Set(freshExes);
-      const newBuildings = world.buildings.filter((b) => freshSet.has(b.id));
+      const world = await buildWorldFor();
       broadcast(
         JSON.stringify({
           kind: "world-delta",
-          buildings: newBuildings,
+          buildings: [],
           regions: world.regions,
         }),
       );
       console.log(
-        `[ws] world-delta: +${newBuildings.length} buildings, +${freshWorkDirs.length}/-${expiredWorkDirs.length} work dirs, ${world.regions.length} regions total`,
+        `[ws] world-delta: +${freshTerms.length}/-${goneTerms.length} terminals, +${freshWorkDirs.length}/-${expiredWorkDirs.length} work dirs, ${world.regions.length} islands`,
       );
     }
   } catch (err) {

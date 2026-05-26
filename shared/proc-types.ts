@@ -8,6 +8,9 @@ export type FileActivity = {
 
 export type ProcessSnapshot = {
   pid: number;
+  ppid: number;
+  // The id of the in-app terminal this process descends from, or null.
+  terminal: string | null;
   exe: string;
   comm: string;
   cpu: number;

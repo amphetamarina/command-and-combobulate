@@ -17,8 +17,11 @@ export type BuildingDescriptor = {
 };
 
 export type Region = {
+  // A folder path for work islands, or a terminal id ("t1") for terminal
+  // islands.
   path: string;
-  kind: "bin" | "work";
+  kind: "terminal" | "work";
+  label: string;
   origin: { x: number; y: number };
   size: { w: number; h: number };
   tint: number;

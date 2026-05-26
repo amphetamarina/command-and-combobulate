@@ -3,8 +3,9 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadCache, saveCache } from "./persistence.ts";
-import { buildWorld, emptyCache } from "./world-builder.ts";
-import type { ManifestEntry } from "../shared/types.ts";
+import { buildWorld, emptyCache, type TerminalInfo } from "./world-builder.ts";
+
+const term = (id: string): TerminalInfo => ({ id, label: id });
 
 const path = join(tmpdir(), `isotop-cache-${process.pid}-${Date.now()}.json`);
 
@@ -19,36 +20,28 @@ test("returns an empty cache when the file is missing", async () => {
   expect(cache.freeRegionSlots).toEqual([]);
 });
 
-test("round-trips region and building slot assignments", async () => {
+test("round-trips region slot assignments", async () => {
   const cache = emptyCache();
-  const manifest: ManifestEntry[] = [
-    { path: "/usr/bin/grep", hash: "aa".repeat(32), size: 1 },
-    { path: "/opt/tool/run", hash: "bb".repeat(32), size: 2 },
-  ];
-  buildWorld(manifest, cache, ["/var/log"]);
+  buildWorld([term("t1"), term("t2")], ["/var/log"], cache);
 
   await saveCache(path, cache);
   const loaded = await loadCache(path);
 
   expect([...loaded.region]).toEqual([...cache.region]);
-  expect([...loaded.building]).toEqual([...cache.building]);
   expect(loaded.freeRegionSlots).toEqual(cache.freeRegionSlots);
 });
 
-test("positions stay stable when the same manifest is rebuilt with a reloaded cache", async () => {
-  const manifest: ManifestEntry[] = [
-    { path: "/usr/bin/grep", hash: "aa".repeat(32), size: 1 },
-    { path: "/usr/bin/sed", hash: "cc".repeat(32), size: 1 },
-    { path: "/opt/tool/run", hash: "bb".repeat(32), size: 2 },
-  ];
+test("region positions stay stable when rebuilt with a reloaded cache", async () => {
+  const terminals = [term("t1"), term("t2")];
+  const workDirs = ["/var/log", "/home/me/project"];
   const first = emptyCache();
-  const before = buildWorld(manifest, first);
+  const before = buildWorld(terminals, workDirs, first);
   await saveCache(path, first);
 
   const reloaded = await loadCache(path);
-  const after = buildWorld(manifest, reloaded);
+  const after = buildWorld(terminals, workDirs, reloaded);
 
-  const tilesOf = (w: ReturnType<typeof buildWorld>) =>
-    Object.fromEntries(w.buildings.map((b) => [b.id, b.tile]));
-  expect(tilesOf(after)).toEqual(tilesOf(before));
+  const originsOf = (w: ReturnType<typeof buildWorld>) =>
+    Object.fromEntries(w.regions.map((r) => [r.path, r.origin]));
+  expect(originsOf(after)).toEqual(originsOf(before));
 });

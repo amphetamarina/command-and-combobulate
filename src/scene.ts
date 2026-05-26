@@ -1,20 +1,15 @@
 import Phaser from "phaser";
-import type { BuildingDescriptor, Region } from "../shared/types.ts";
+import type { Region } from "../shared/types.ts";
 import type { LiveMessage, ProcessSnapshot } from "../shared/proc-types.ts";
-import {
-  BUILDING_NAMES,
-  BUILDING_VARIANTS,
-  TOOL_SPRITE_KEYS,
-  type BuildingSpriteKey,
-} from "../shared/sprites.ts";
 import { liveSocketUrl } from "./api.ts";
 import { Sidebar, SIDEBAR_FRACTION } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
 import {
   drawIslandSides,
   drawIslandEdges,
-  drawIslandLinks,
   drawIslandTop,
+  drawCable,
+  regionCenter,
 } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
@@ -26,8 +21,8 @@ import {
   SHEET_ROW_DIRS,
   WANDER_OFFSETS,
   headingFromScreen,
-  npcWorldPosition,
-  robotForBuilding,
+  npcHome,
+  robotForExe,
   robotTextureKey,
   rowForHeading,
   type RobotKey,
@@ -38,8 +33,8 @@ const LINK_DEPTH = -19.5;
 const TOP_DEPTH = -19;
 const EDGE_DEPTH = -18;
 const LABEL_DEPTH = 100000;
-const WORK_LABEL_COLOR = "#ffd0e6";
-const NORMAL_LABEL_COLOR = "#ecc8d8";
+const TERMINAL_LABEL_COLOR = "#ffd0e6";
+const WORK_LABEL_COLOR = "#ecc8d8";
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
@@ -65,22 +60,15 @@ type NpcState = {
   cpuFill: Phaser.GameObjects.Rectangle;
   memFill: Phaser.GameObjects.Rectangle;
   badge: Phaser.GameObjects.Text;
-  building: BuildingDescriptor;
-  currentTile: { x: number; y: number };
   homeTile: { x: number; y: number };
+  currentTile: { x: number; y: number };
   latest: ProcessSnapshot;
   busy: boolean;
   workingDir: string | null;
   tripId: number;
 };
 
-type CitySceneData = { buildings: BuildingDescriptor[]; regions: Region[] };
-
-function formatSize(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-}
+type CitySceneData = { regions: Region[] };
 
 function formatRegionLabel(path: string): string {
   const home = path.replace(/^\/home\/[^/]+/, "~").replace(/^\/root/, "~");
@@ -97,17 +85,6 @@ function cpuBarColor(cpu: number): number {
   return 0xe05a4a;
 }
 
-function buildingAssetUrl(key: BuildingSpriteKey): string {
-  const parts = key.split("/");
-  if (parts[0] === "tool") {
-    return `/isotop-assets/sci-fi/buildings/tools/${parts[1]}.png`;
-  }
-  const name = parts[1]!;
-  const variant = parts[2]!;
-  const dir = encodeURIComponent(`Step ${variant}`);
-  return `/isotop-assets/sci-fi/buildings/${dir}/${name}.png`;
-}
-
 function robotAssetUrl(key: RobotKey): string {
   if ((NAMED_ROBOTS as readonly string[]).includes(key)) {
     return `/isotop-assets/sci-fi/units/Robots/Spritesheets/${key}-8dir-walk-hover.png`;
@@ -116,10 +93,8 @@ function robotAssetUrl(key: RobotKey): string {
 }
 
 export class CityScene extends Phaser.Scene {
-  private buildings: BuildingDescriptor[] = [];
   private regions: Region[] = [];
   private regionByPath = new Map<string, Region>();
-  private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
   private sidesGraphics: Phaser.GameObjects.Graphics | null = null;
   private linksGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -130,46 +105,25 @@ export class CityScene extends Phaser.Scene {
   private dragging = false;
   private sidebar: Sidebar | null = null;
   private terminals: TerminalsUI | null = null;
-  private termBuildings = new Map<
-    string,
-    { sprite: Phaser.GameObjects.Image; label: Phaser.GameObjects.Text }
-  >();
-  private termCount = 0;
 
   constructor() {
     super("city");
   }
 
   init(data: CitySceneData) {
-    this.buildings = data.buildings ?? [];
     this.regions = data.regions ?? [];
-    this.buildingByExe = new Map(this.buildings.map((b) => [b.id, b]));
   }
 
   preload() {
-    for (const name of BUILDING_NAMES) {
-      for (const v of BUILDING_VARIANTS) {
-        const key: BuildingSpriteKey = `building/${name}/${v}`;
-        this.load.image(key, buildingAssetUrl(key));
-      }
-    }
-    for (const key of TOOL_SPRITE_KEYS) {
-      this.load.image(key, buildingAssetUrl(key));
-    }
     for (const key of ROBOT_KEYS) {
       this.load.spritesheet(robotTextureKey(key), robotAssetUrl(key), {
         frameWidth: ROBOT_FRAME_W,
         frameHeight: ROBOT_FRAME_H,
       });
     }
-    this.load.image("icon/terminal", "/isotop-assets/sci-fi/icons/terminal.png");
   }
 
   create() {
-    const sorted = [...this.buildings].sort(
-      (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
-    );
-
     this.applyCameraViewport();
     this.scale.on("resize", () => this.applyCameraViewport());
 
@@ -179,25 +133,15 @@ export class CityScene extends Phaser.Scene {
     this.topGraphics = this.add.graphics().setDepth(TOP_DEPTH);
     this.edgesGraphics = this.add.graphics().setDepth(EDGE_DEPTH);
     this.renderRegions();
-
-    for (const d of sorted) {
-      this.placeBuildingSprite(d);
-    }
-
-    const maxTileSum = this.buildings.reduce(
-      (m, d) =>
-        Math.max(m, d.tile.x + d.footprint.w + d.tile.y + d.footprint.h),
-      0,
-    );
-    this.cameras.main.centerOn(0, (maxTileSum * TILE_H) / 4);
+    this.recenterCamera();
 
     this.sidebar = new Sidebar({
       onBuildTerminal: () => void this.terminals?.spawn(),
     });
     this.terminals = new TerminalsUI({
       host: this.sidebar.terminalHost,
-      onOpened: (id) => this.addTerminalBuilding(id),
-      onClosed: (id) => this.removeTerminalBuilding(id),
+      onOpened: () => {},
+      onClosed: () => {},
       onList: (ids, active) =>
         this.sidebar?.setTerminals(
           ids,
@@ -225,7 +169,20 @@ export class CityScene extends Phaser.Scene {
     );
   }
 
-
+  private recenterCamera() {
+    if (this.regions.length === 0) {
+      this.cameras.main.centerOn(0, TILE_H * 2);
+      return;
+    }
+    let sx = 0;
+    let sy = 0;
+    for (const r of this.regions) {
+      const c = regionCenter(r);
+      sx += c.x;
+      sy += c.y;
+    }
+    this.cameras.main.centerOn(sx / this.regions.length, sy / this.regions.length);
+  }
 
   private createRobotAnims() {
     for (const key of ROBOT_KEYS) {
@@ -255,14 +212,11 @@ export class CityScene extends Phaser.Scene {
       return;
     }
     this.sidesGraphics.clear();
-    this.linksGraphics.clear();
     this.topGraphics.clear();
     this.edgesGraphics.clear();
     for (const label of this.regionLabels) label.destroy();
     this.regionLabels = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
-
-    drawIslandLinks(this.linksGraphics, this.regions);
 
     const ordered = [...this.regions].sort(
       (a, b) => a.origin.x + a.origin.y - (b.origin.x + b.origin.y),
@@ -272,15 +226,14 @@ export class CityScene extends Phaser.Scene {
       drawIslandTop(this.topGraphics, r);
       drawIslandEdges(this.edgesGraphics, r);
 
-      const isWork = r.kind === "work";
+      const isTerminal = r.kind === "terminal";
       const corner = tileToScreen(r.origin.x, r.origin.y);
-      const text = formatRegionLabel(r.path);
       const label = this.add
-        .text(corner.x, corner.y - 4, text, {
+        .text(corner.x, corner.y - 4, formatRegionLabel(r.label), {
           fontFamily: "'JetBrains Mono', ui-monospace, monospace",
           fontSize: "13px",
-          color: isWork ? WORK_LABEL_COLOR : NORMAL_LABEL_COLOR,
-          fontStyle: isWork ? "italic" : "normal",
+          color: isTerminal ? TERMINAL_LABEL_COLOR : WORK_LABEL_COLOR,
+          fontStyle: isTerminal ? "normal" : "italic",
         })
         .setOrigin(0.5, 1)
         .setDepth(LABEL_DEPTH);
@@ -288,27 +241,22 @@ export class CityScene extends Phaser.Scene {
     }
   }
 
-  private placeBuildingSprite(d: BuildingDescriptor) {
-    const tilePos = tileToScreen(d.tile.x, d.tile.y);
-    const img = this.add.image(
-      tilePos.x,
-      tilePos.y + TILE_H,
-      d.spriteKey,
-    );
-    img.setOrigin(0.5, 1);
-    img.setDepth(d.tile.x + d.tile.y);
-    img.setInteractive({ pixelPerfect: true });
-    img.on("pointerover", () => this.showBuildingTooltip(d));
-    img.on("pointerout", () => this.hideTooltip());
-  }
-
-  private addBuilding(d: BuildingDescriptor) {
-    if (this.buildingByExe.has(d.id)) return;
-    this.buildings.push(d);
-    this.buildingByExe.set(d.id, d);
-    this.placeBuildingSprite(d);
-    // Ground is redrawn once by the world-delta handler after all buildings
-    // are added, not per building.
+  // A cable from each terminal island to every folder island its processes
+  // are currently touching.
+  private drawCables(processes: ProcessSnapshot[]) {
+    if (!this.linksGraphics) return;
+    this.linksGraphics.clear();
+    const drawn = new Set<string>();
+    for (const p of processes) {
+      if (!p.terminal || !p.activity) continue;
+      const key = `${p.terminal}->${p.activity.dir}`;
+      if (drawn.has(key)) continue;
+      const term = this.regionByPath.get(p.terminal);
+      const work = this.regionByPath.get(p.activity.dir);
+      if (!term || !work) continue;
+      drawn.add(key);
+      drawCable(this.linksGraphics, regionCenter(term), regionCenter(work));
+    }
   }
 
   private startLiveSocket() {
@@ -332,14 +280,9 @@ export class CityScene extends Phaser.Scene {
             lastCount = msg.processes.length;
           }
         } else if (msg.kind === "world-delta") {
-          for (const d of msg.buildings) {
-            this.addBuilding(d);
-          }
           this.regions = msg.regions;
           this.renderRegions();
-          console.log(
-            `[ws] +${msg.buildings.length} new building(s), ${msg.regions.length} regions`,
-          );
+          console.log(`[ws] ${msg.regions.length} islands`);
         }
       });
       ws.addEventListener("close", () => {
@@ -363,9 +306,9 @@ export class CityScene extends Phaser.Scene {
         this.handleActivity(existing);
         continue;
       }
-      const building = this.buildingByExe.get(p.exe);
-      if (!building) continue;
-      const state = this.createNpc(p, building);
+      const home = p.terminal ? this.regionByPath.get(p.terminal) : undefined;
+      if (!home) continue;
+      const state = this.createNpc(p, home);
       this.npcs.set(p.pid, state);
       this.scheduleWander(state);
       this.handleActivity(state);
@@ -376,14 +319,12 @@ export class CityScene extends Phaser.Scene {
         this.npcs.delete(pid);
       }
     }
+    this.drawCables(processes);
   }
 
-  private createNpc(
-    p: ProcessSnapshot,
-    building: BuildingDescriptor,
-  ): NpcState {
-    const spawn = npcWorldPosition(p.pid, building);
-    const robotTex = robotTextureKey(robotForBuilding(building.spriteKey, p.pid));
+  private createNpc(p: ProcessSnapshot, home: Region): NpcState {
+    const spawn = npcHome(p.pid, home);
+    const robotTex = robotTextureKey(robotForExe(p.exe, p.pid));
     const mech = this.add.sprite(0, 0, robotTex).setOrigin(0.5, 1);
     mech.setFrame(rowForHeading("S") * ROBOT_COLS);
     mech.setInteractive({ pixelPerfect: true });
@@ -443,9 +384,8 @@ export class CityScene extends Phaser.Scene {
       cpuFill,
       memFill,
       badge,
-      building,
-      currentTile: spawn.tile,
       homeTile: spawn.tile,
+      currentTile: spawn.tile,
       latest: p,
       busy: false,
       workingDir: null,
@@ -481,10 +421,9 @@ export class CityScene extends Phaser.Scene {
     state.mech.setFrame(rowForHeading(state.heading) * ROBOT_COLS);
   }
 
-
   private handleActivity(state: NpcState) {
     const act = state.latest.activity;
-    if (!act || act.dir === state.building.district) return;
+    if (!act) return;
     if (state.workingDir === act.dir) return;
     const region = this.regionByPath.get(act.dir);
     if (!region) return;
@@ -575,8 +514,8 @@ export class CityScene extends Phaser.Scene {
     const off =
       WANDER_OFFSETS[Math.floor(Math.random() * WANDER_OFFSETS.length)]!;
     const targetTile = {
-      x: state.building.tile.x + off.x,
-      y: state.building.tile.y + off.y,
+      x: state.homeTile.x + off.x,
+      y: state.homeTile.y + off.y,
     };
     const targetScreen = tileToScreen(targetTile.x, targetTile.y);
     const dest = { x: targetScreen.x, y: targetScreen.y + TILE_H / 2 };
@@ -602,48 +541,6 @@ export class CityScene extends Phaser.Scene {
     });
   }
 
-  private addTerminalBuilding(id: string) {
-    const i = this.termCount++;
-    const tx = 1 + (i % 5) * 2;
-    const ty = 1 + Math.floor(i / 5) * 2;
-    const pos = tileToScreen(tx, ty);
-    const sprite = this.add
-      .image(pos.x, pos.y + TILE_H, "icon/terminal")
-      .setOrigin(0.5, 1)
-      .setDepth(tx + ty + 0.2);
-    sprite.setInteractive({ pixelPerfect: true });
-    sprite.on("pointerover", () =>
-      this.showSimpleTooltip(`terminal ${id} — click to open`),
-    );
-    sprite.on("pointerout", () => this.hideTooltip());
-    sprite.on("pointerup", () => this.terminals?.open(id));
-    const label = this.add
-      .text(pos.x, pos.y + TILE_H - 58, `\u{1F5A5} ${id}`, {
-        fontFamily: "ui-monospace, monospace",
-        fontSize: "11px",
-        color: "#7fe0d0",
-        stroke: "#0a0a12",
-        strokeThickness: 3,
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(LABEL_DEPTH);
-    this.termBuildings.set(id, { sprite, label });
-  }
-
-  private removeTerminalBuilding(id: string) {
-    const t = this.termBuildings.get(id);
-    if (!t) return;
-    t.sprite.destroy();
-    t.label.destroy();
-    this.termBuildings.delete(id);
-  }
-
-  private showSimpleTooltip(text: string) {
-    if (this.dragging || !this.tooltip) return;
-    this.tooltip.textContent = text;
-    this.tooltip.style.display = "block";
-  }
-
   private createTooltip(): HTMLDivElement {
     const el = document.createElement("div");
     el.style.cssText = [
@@ -652,7 +549,7 @@ export class CityScene extends Phaser.Scene {
       "display:none",
       "background:#1a1a28",
       "color:#e0e0f0",
-      "border:1px solid #6bb6ff",
+      "border:1px solid #ff9ec7",
       "padding:8px 10px",
       "font-family:ui-monospace,monospace",
       "font-size:12px",
@@ -665,12 +562,6 @@ export class CityScene extends Phaser.Scene {
     ].join(";");
     document.body.appendChild(el);
     return el;
-  }
-
-  private showBuildingTooltip(d: BuildingDescriptor) {
-    if (this.dragging || !this.tooltip) return;
-    this.tooltip.textContent = `${d.id}\nhash:  ${d.hashShort}\nsize:  ${formatSize(d.size)}`;
-    this.tooltip.style.display = "block";
   }
 
   private showProcTooltip(p: ProcessSnapshot) {

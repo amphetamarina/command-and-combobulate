@@ -1,4 +1,5 @@
-import type { BuildingDescriptor } from "../shared/types.ts";
+import type { Region } from "../shared/types.ts";
+import { toolFor } from "../shared/sprites.ts";
 import { TILE_H, tileToScreen, type ScreenPoint } from "./iso.ts";
 
 // Each walk spritesheet is 4 columns x 8 rows of 58x64 frames: one row per
@@ -17,12 +18,10 @@ export function robotTextureKey(key: RobotKey): string {
   return `robot/${key}`;
 }
 
-export function robotForBuilding(spriteKey: string, pid: number): RobotKey {
-  if (spriteKey.startsWith("tool/")) {
-    const tool = spriteKey.slice("tool/".length);
-    if ((NAMED_ROBOTS as readonly string[]).includes(tool)) {
-      return tool as RobotKey;
-    }
+export function robotForExe(exe: string, pid: number): RobotKey {
+  const tool = toolFor(exe);
+  if (tool && (NAMED_ROBOTS as readonly string[]).includes(tool)) {
+    return tool as RobotKey;
   }
   return GENERIC_ROBOTS[pid % GENERIC_ROBOTS.length]!;
 }
@@ -55,13 +54,6 @@ export function rowForHeading(h: Heading): number {
   return r < 0 ? 0 : r;
 }
 
-const ADJACENT_OFFSETS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 1, y: 0 },
-  { x: 0, y: 1 },
-  { x: -1, y: 0 },
-  { x: 0, y: -1 },
-];
-
 export const WANDER_OFFSETS: ReadonlyArray<{ x: number; y: number }> = [
   { x: 1, y: 0 },
   { x: 0, y: 1 },
@@ -79,13 +71,14 @@ export type NpcSpawn = {
   tileSum: number;
 };
 
-export function npcWorldPosition(
-  pid: number,
-  building: BuildingDescriptor,
-): NpcSpawn {
-  const off = ADJACENT_OFFSETS[pid % ADJACENT_OFFSETS.length]!;
-  const tx = building.tile.x + off.x;
-  const ty = building.tile.y + off.y;
+// A home tile for a process inside its terminal island, spread across the
+// island's interior by pid so siblings do not stack.
+export function npcHome(pid: number, region: Region): NpcSpawn {
+  const cols = Math.max(1, region.size.w - 2);
+  const rows = Math.max(1, region.size.h - 2);
+  const slot = ((pid % (cols * rows)) + cols * rows) % (cols * rows);
+  const tx = region.origin.x + 1 + (slot % cols);
+  const ty = region.origin.y + 1 + Math.floor(slot / cols);
   const s = tileToScreen(tx, ty);
   return {
     screen: { x: s.x, y: s.y + TILE_H / 2 },

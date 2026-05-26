@@ -82,6 +82,10 @@ export class TerminalManager {
     return [...this.terminals.values()].map((t) => t.pid);
   }
 
+  refs(): { id: string; pid: number }[] {
+    return [...this.terminals.entries()].map(([id, t]) => ({ id, pid: t.pid }));
+  }
+
   kill(id: string) {
     this.terminals.get(id)?.kill();
     this.terminals.delete(id);

@@ -36,41 +36,24 @@ function poly(g: Phaser.GameObjects.Graphics, pts: Pt[]): void {
   g.fillPath();
 }
 
-function centerScreen(r: Region): Pt {
+export function regionCenter(r: Region): Pt {
   return tileToScreen(r.origin.x + r.size.w / 2, r.origin.y + r.size.h / 2);
-}
-
-// The deepest ancestor region whose path contains this one's path.
-function parentOf(r: Region, regions: Region[]): Region | null {
-  let best: Region | null = null;
-  for (const o of regions) {
-    if (o === r || o.path === r.path) continue;
-    const prefix = o.path.endsWith("/") ? o.path : `${o.path}/`;
-    if (!r.path.startsWith(prefix)) continue;
-    if (!best || o.path.length > best.path.length) best = o;
-  }
-  return best;
 }
 
 const LINK_BASE = 0x140c12;
 const LINK_CORE = 0xab6982;
 
-// EXAPUNKS-style cables linking each island to its parent folder. Drawn below
-// the island tops so they slip under the edges and only show across the gaps.
-export function drawIslandLinks(
+// An EXAPUNKS-style cable between two island centers. Drawn below the island
+// tops so it slips under the edges and only shows across the gaps.
+export function drawCable(
   g: Phaser.GameObjects.Graphics,
-  regions: Region[],
+  a: Pt,
+  b: Pt,
 ): void {
-  for (const r of regions) {
-    const parent = parentOf(r, regions);
-    if (!parent) continue;
-    const a = centerScreen(r);
-    const b = centerScreen(parent);
-    g.lineStyle(4, LINK_BASE, 0.9);
-    g.lineBetween(a.x, a.y, b.x, b.y);
-    g.lineStyle(1.5, LINK_CORE, 0.85);
-    g.lineBetween(a.x, a.y, b.x, b.y);
-  }
+  g.lineStyle(4, LINK_BASE, 0.9);
+  g.lineBetween(a.x, a.y, b.x, b.y);
+  g.lineStyle(1.5, LINK_CORE, 0.85);
+  g.lineBetween(a.x, a.y, b.x, b.y);
 }
 
 // The extruded slab sides, drawn below the panel top.

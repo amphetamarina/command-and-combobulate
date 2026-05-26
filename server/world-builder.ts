@@ -1,30 +1,19 @@
 import seedrandom from "seedrandom";
-import { dirname } from "node:path";
-import type {
-  BuildingDescriptor,
-  ManifestEntry,
-  Region,
-  World,
-} from "../shared/types.ts";
-import { BUILDING_SPRITE_KEYS, toolFor } from "../shared/sprites.ts";
+import type { Region, World } from "../shared/types.ts";
 
-export const TILE_SPACING = 3;
-export const REGION_GUTTER = 2;
-const MAX_OFFSET = 0.5;
-const REGION_PADDING = 1;
+// Every island is a fixed square; terminals are a touch bigger so several
+// agent robots fit. A uniform stride keeps the meta-grid simple and gap-free.
+const TERMINAL_SIZE = 6;
+const WORK_SIZE = 4;
+const REGION_GUTTER = 2;
+const STRIDE = Math.max(TERMINAL_SIZE, WORK_SIZE) + REGION_GUTTER;
 
-function regionSide(count: number): number {
-  return Math.max(1, Math.ceil(Math.sqrt(count)));
-}
-
-function regionFootprint(count: number): number {
-  return regionSide(count) * TILE_SPACING + 2 * REGION_PADDING;
-}
-
-const REGION_TINTS = [
-  0x3a5f8a, 0x6a4a7a, 0x4a7a5a, 0x8a6a3a, 0x7a4a4a, 0x4a6a8a, 0x6a6a4a,
-  0x5a4a8a,
+const TERMINAL_TINT = 0xff9ec7;
+const WORK_TINTS = [
+  0xc98aa6, 0xb88fb0, 0xc99a82, 0xa88fb8, 0xcf8f9a, 0x9a8fc0,
 ] as const;
+
+export type TerminalInfo = { id: string; label: string };
 
 export type PlacementCache = {
   region: Map<string, number>;
@@ -36,10 +25,10 @@ export function emptyCache(): PlacementCache {
   return { region: new Map(), building: new Map(), freeRegionSlots: [] };
 }
 
-export function releaseRegion(cache: PlacementCache, dir: string): void {
-  const slot = cache.region.get(dir);
+export function releaseRegion(cache: PlacementCache, key: string): void {
+  const slot = cache.region.get(key);
   if (slot === undefined) return;
-  cache.region.delete(dir);
+  cache.region.delete(key);
   cache.freeRegionSlots.push(slot);
 }
 
@@ -51,134 +40,52 @@ export function squareCell(slot: number): { col: number; row: number } {
     : { col: offset - ring - 1, row: ring };
 }
 
-function groupByDirectory(
-  entries: ManifestEntry[],
-): Map<string, ManifestEntry[]> {
-  const groups = new Map<string, ManifestEntry[]>();
-  for (const entry of entries) {
-    const dir = dirname(entry.path);
-    let group = groups.get(dir);
-    if (!group) {
-      group = [];
-      groups.set(dir, group);
-    }
-    group.push(entry);
-  }
-  return groups;
-}
+type Item = { key: string; kind: Region["kind"]; label: string };
 
-function assignSlots(
-  allDirs: string[],
-  binDirs: string[],
-  groups: Map<string, ManifestEntry[]>,
-  cache: PlacementCache,
-): void {
+function assignSlots(items: Item[], cache: PlacementCache): void {
   const free = cache.freeRegionSlots.sort((a, b) => a - b);
-  let nextRegion =
-    Math.max(-1, ...cache.region.values(), ...free) + 1;
-  for (const dir of allDirs) {
-    if (cache.region.has(dir)) continue;
-    const slot = free.length > 0 ? free.shift()! : nextRegion++;
-    cache.region.set(dir, slot);
+  let next = Math.max(-1, ...cache.region.values(), ...free) + 1;
+  for (const it of items) {
+    if (cache.region.has(it.key)) continue;
+    cache.region.set(it.key, free.length > 0 ? free.shift()! : next++);
   }
   cache.freeRegionSlots = free;
-
-  for (const dir of binDirs) {
-    const group = groups.get(dir)!;
-    const taken = group
-      .map((e) => cache.building.get(e.path))
-      .filter((v): v is number => v !== undefined);
-    let nextLocal = taken.length > 0 ? Math.max(...taken) + 1 : 0;
-    for (const entry of group) {
-      if (!cache.building.has(entry.path)) {
-        cache.building.set(entry.path, nextLocal++);
-      }
-    }
-  }
 }
 
-function buildRegion(
-  dir: string,
-  group: ManifestEntry[],
-  cache: PlacementCache,
-  stride: number,
-): { region: Region; buildings: BuildingDescriptor[] } {
-  const regionCell = squareCell(cache.region.get(dir)!);
-  const originX = regionCell.col * stride;
-  const originY = regionCell.row * stride;
+// The world is now agent-centric: one island per in-app terminal, plus one
+// island per folder an agent is touching. No binaries, no buildings.
+export function buildWorld(
+  terminals: TerminalInfo[],
+  workDirs: string[] = [],
+  cache: PlacementCache = emptyCache(),
+): World {
+  const termKeys = new Set(terminals.map((t) => t.id));
+  const items: Item[] = [
+    ...terminals.map((t) => ({ key: t.id, kind: "terminal" as const, label: t.label })),
+    ...workDirs
+      .filter((d) => !termKeys.has(d))
+      .map((d) => ({ key: d, kind: "work" as const, label: d })),
+  ];
+  if (items.length === 0) return { buildings: [], regions: [] };
 
-  let maxCol = 0;
-  let maxRow = 0;
-  const buildings: BuildingDescriptor[] = group.map((entry) => {
-    const cell = squareCell(cache.building.get(entry.path)!);
-    maxCol = Math.max(maxCol, cell.col);
-    maxRow = Math.max(maxRow, cell.row);
+  assignSlots(items, cache);
 
-    const rng = seedrandom(entry.hash);
-    const variantPick =
-      BUILDING_SPRITE_KEYS[Math.floor(rng() * BUILDING_SPRITE_KEYS.length)]!;
-    const tool = toolFor(entry.path);
-    const spriteKey = tool ? (`tool/${tool}` as const) : variantPick;
-    const offsetX = (rng() * 2 - 1) * MAX_OFFSET;
-    const offsetY = (rng() * 2 - 1) * MAX_OFFSET;
-
+  const regions: Region[] = items.map((it) => {
+    const cell = squareCell(cache.region.get(it.key)!);
+    const side = it.kind === "terminal" ? TERMINAL_SIZE : WORK_SIZE;
+    const rng = seedrandom(it.key);
     return {
-      id: entry.path,
-      district: dir,
-      tile: {
-        x: originX + REGION_PADDING + cell.col * TILE_SPACING + offsetX,
-        y: originY + REGION_PADDING + cell.row * TILE_SPACING + offsetY,
-      },
-      footprint: { w: 1, h: 1 },
-      spriteKey,
-      hashShort: entry.hash.slice(0, 8),
-      size: entry.size,
+      path: it.key,
+      kind: it.kind,
+      label: it.label,
+      origin: { x: cell.col * STRIDE, y: cell.row * STRIDE },
+      size: { w: side, h: side },
+      tint:
+        it.kind === "terminal"
+          ? TERMINAL_TINT
+          : WORK_TINTS[Math.floor(rng() * WORK_TINTS.length)]!,
     };
   });
 
-  const tintRng = seedrandom(dir);
-  const region: Region = {
-    path: dir,
-    kind: group.length > 0 ? "bin" : "work",
-    origin: { x: originX, y: originY },
-    size: {
-      w: (maxCol + 1) * TILE_SPACING + 2 * REGION_PADDING,
-      h: (maxRow + 1) * TILE_SPACING + 2 * REGION_PADDING,
-    },
-    tint: REGION_TINTS[Math.floor(tintRng() * REGION_TINTS.length)]!,
-  };
-
-  return { region, buildings };
-}
-
-export function buildWorld(
-  manifest: ManifestEntry[],
-  cache: PlacementCache = emptyCache(),
-  workDirs: string[] = [],
-): World {
-  const sorted = [...manifest].sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-  );
-  const groups = groupByDirectory(sorted);
-  const binDirs = [...groups.keys()];
-  const workOnly = workDirs.filter((d) => !groups.has(d));
-  const allDirs = [...new Set([...binDirs, ...workOnly])].sort();
-  if (allDirs.length === 0) return { buildings: [], regions: [] };
-
-  assignSlots(allDirs, binDirs, groups, cache);
-
-  const stride =
-    Math.max(
-      ...allDirs.map((d) => regionFootprint((groups.get(d) ?? []).length)),
-    ) + REGION_GUTTER;
-
-  const buildings: BuildingDescriptor[] = [];
-  const regions: Region[] = [];
-  for (const dir of allDirs) {
-    const built = buildRegion(dir, groups.get(dir) ?? [], cache, stride);
-    regions.push(built.region);
-    buildings.push(...built.buildings);
-  }
-
-  return { buildings, regions };
+  return { buildings: [], regions };
 }

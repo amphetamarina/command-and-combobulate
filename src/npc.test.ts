@@ -2,38 +2,39 @@ import { test, expect } from "bun:test";
 import {
   GENERIC_ROBOTS,
   headingFromScreen,
-  npcWorldPosition,
-  robotForBuilding,
+  npcHome,
+  robotForExe,
   rowForHeading,
   SHEET_ROW_DIRS,
 } from "./npc.ts";
-import type { BuildingDescriptor } from "../shared/types.ts";
+import type { Region } from "../shared/types.ts";
 
-const building: BuildingDescriptor = {
-  id: "/usr/bin/bash",
-  district: "running",
-  tile: { x: 4, y: 6 },
-  footprint: { w: 1, h: 1 },
-  spriteKey: "building/foerderturm/1",
-  hashShort: "00000000",
-  size: 1,
+const region: Region = {
+  path: "t1",
+  kind: "terminal",
+  label: "/home/me",
+  origin: { x: 4, y: 6 },
+  size: { w: 6, h: 6 },
+  tint: 0xffffff,
 };
 
-test("robotForBuilding picks the matching tool robot", () => {
-  expect(robotForBuilding("tool/claude", 1)).toBe("claude");
-  expect(robotForBuilding("tool/codex", 2)).toBe("codex");
-  expect(robotForBuilding("tool/opencode", 3)).toBe("opencode");
+test("robotForExe picks the matching tool robot", () => {
+  expect(robotForExe("/home/me/.local/share/claude/versions/9/claude", 1)).toBe(
+    "claude",
+  );
+  expect(robotForExe("/usr/bin/codex", 2)).toBe("codex");
+  expect(robotForExe("/opt/opencode/opencode", 3)).toBe("opencode");
 });
 
-test("robotForBuilding falls back to a generic chassis", () => {
-  expect(robotForBuilding("building/foerderturm/1", 0)).toBe(GENERIC_ROBOTS[0]);
-  expect(robotForBuilding("tool/bun", 0)).toBe(GENERIC_ROBOTS[0]);
+test("robotForExe falls back to a generic chassis", () => {
+  expect(robotForExe("/usr/bin/bash", 0)).toBe(GENERIC_ROBOTS[0]);
+  expect(robotForExe("/usr/bin/bun", 0)).toBe(GENERIC_ROBOTS[0]);
 });
 
-test("robotForBuilding spreads unknown pids across generic chassis", () => {
+test("robotForExe spreads unknown pids across generic chassis", () => {
   const seen = new Set<string>();
   for (let pid = 0; pid < 30; pid++) {
-    seen.add(robotForBuilding("building/foerderturm/1", pid));
+    seen.add(robotForExe("/usr/bin/bash", pid));
   }
   expect(seen.size).toBe(GENERIC_ROBOTS.length);
 });
@@ -52,25 +53,25 @@ test("rowForHeading returns the sheet row index for each heading", () => {
   }
 });
 
-test("npcWorldPosition is deterministic for a given pid and building", () => {
-  const a = npcWorldPosition(123, building);
-  const b = npcWorldPosition(123, building);
-  expect(a).toEqual(b);
+test("npcHome is deterministic for a given pid and region", () => {
+  expect(npcHome(123, region)).toEqual(npcHome(123, region));
 });
 
-test("npcWorldPosition places different pids at different adjacent tiles", () => {
+test("npcHome places different pids at different tiles inside the island", () => {
   const positions = new Set<string>();
-  for (let pid = 0; pid < 4; pid++) {
-    const p = npcWorldPosition(pid, building);
-    positions.add(`${p.screen.x},${p.screen.y}`);
+  for (let pid = 0; pid < 16; pid++) {
+    const p = npcHome(pid, region);
+    positions.add(`${p.tile.x},${p.tile.y}`);
   }
-  expect(positions.size).toBe(4);
+  expect(positions.size).toBe(16);
 });
 
-test("npc tileSum is one greater or less than building's tile sum", () => {
-  const buildingTileSum = building.tile.x + building.tile.y;
-  for (let pid = 0; pid < 8; pid++) {
-    const p = npcWorldPosition(pid, building);
-    expect(Math.abs(p.tileSum - buildingTileSum)).toBe(1);
+test("npcHome keeps the home tile inside the region's interior", () => {
+  for (let pid = 0; pid < 30; pid++) {
+    const p = npcHome(pid, region);
+    expect(p.tile.x).toBeGreaterThan(region.origin.x);
+    expect(p.tile.x).toBeLessThan(region.origin.x + region.size.w);
+    expect(p.tile.y).toBeGreaterThan(region.origin.y);
+    expect(p.tile.y).toBeLessThan(region.origin.y + region.size.h);
   }
 });
