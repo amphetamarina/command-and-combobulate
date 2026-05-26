@@ -68,9 +68,19 @@ export function drawIslandSides(g: Phaser.GameObjects.Graphics, r: Region): void
 
 // The island's flat top: a rose panel with a faint isometric grid that reads
 // like a host's grid spaces.
+function lighten(hex: number, amount: number): number {
+  const mix = (c: number) => Math.min(255, Math.round(c + (255 - c) * amount));
+  const r = mix((hex >> 16) & 0xff);
+  const g = mix((hex >> 8) & 0xff);
+  const b = mix(hex & 0xff);
+  return (r << 16) | (g << 8) | b;
+}
+
 export function drawIslandTop(g: Phaser.GameObjects.Graphics, r: Region): void {
   const { N, E, S, W } = corners(r);
-  g.fillStyle(r.kind === "work" ? PANEL_WORK : PANEL_NORMAL, 1);
+  // Lift nested folders a shade so they stand out against their parent.
+  const base = r.kind === "work" ? PANEL_WORK : PANEL_NORMAL;
+  g.fillStyle(lighten(base, Math.min(r.level, 4) * 0.09), 1);
   poly(g, [N, E, S, W]);
 
   const { x: ox, y: oy } = r.origin;

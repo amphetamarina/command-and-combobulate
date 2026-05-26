@@ -16,6 +16,8 @@ const region: Region = {
   origin: { x: 4, y: 6 },
   size: { w: 6, h: 6 },
   tint: 0xffffff,
+  level: 0,
+  fileArea: { x: 5, y: 7, cols: 4, rows: 4 },
 };
 
 test("robotForExe picks the matching tool robot", () => {

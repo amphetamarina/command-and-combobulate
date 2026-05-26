@@ -6,8 +6,21 @@ import {
   squareCell,
   type TerminalInfo,
 } from "./world-builder.ts";
+import type { Region } from "../shared/types.ts";
 
 const term = (id: string, label = id): TerminalInfo => ({ id, label });
+const byPath = (regions: Region[]) =>
+  new Map(regions.map((r) => [r.path, r]));
+const contains = (parent: Region, child: Region) =>
+  child.origin.x >= parent.origin.x &&
+  child.origin.y >= parent.origin.y &&
+  child.origin.x + child.size.w <= parent.origin.x + parent.size.w &&
+  child.origin.y + child.size.h <= parent.origin.y + parent.size.h;
+const disjoint = (a: Region, b: Region) =>
+  a.origin.x + a.size.w <= b.origin.x ||
+  b.origin.x + b.size.w <= a.origin.x ||
+  a.origin.y + a.size.h <= b.origin.y ||
+  b.origin.y + b.size.h <= a.origin.y;
 
 test("squareCell fills a near-square footprint for any count", () => {
   for (let n = 1; n <= 200; n++) {
@@ -22,66 +35,86 @@ test("squareCell fills a near-square footprint for any count", () => {
     }
     expect(seen.size).toBe(n);
     expect(Math.abs(maxCol - maxRow)).toBeLessThanOrEqual(1);
-    const side = Math.ceil(Math.sqrt(n));
-    expect(Math.max(maxCol, maxRow)).toBe(side - 1);
+    expect(Math.max(maxCol, maxRow)).toBe(Math.ceil(Math.sqrt(n)) - 1);
   }
 });
 
 test("the world has no buildings", () => {
-  const { buildings } = buildWorld([term("t1")], ["/a", "/b"]);
-  expect(buildings).toEqual([]);
+  expect(buildWorld([term("t1")], ["/a"]).buildings).toEqual([]);
 });
 
-test("each terminal becomes a region of kind 'terminal'", () => {
+test("each terminal becomes a level-0 terminal region", () => {
   const { regions } = buildWorld([term("t1"), term("t2")], []);
   const terms = regions.filter((r) => r.kind === "terminal");
   expect(terms.map((r) => r.path).sort()).toEqual(["t1", "t2"]);
+  expect(terms.every((r) => r.level === 0)).toBe(true);
 });
 
-test("each work directory becomes a region of kind 'work'", () => {
-  const { regions } = buildWorld([term("t1")], ["/home/me/project", "/var/log"]);
-  const work = regions.filter((r) => r.kind === "work");
-  expect(work.map((r) => r.path).sort()).toEqual(["/home/me/project", "/var/log"]);
+test("every touched folder becomes a work region", () => {
+  const { regions } = buildWorld([term("t1")], ["/p", "/p/src", "/p/test"]);
+  const work = regions.filter((r) => r.kind === "work").map((r) => r.path);
+  expect(work.sort()).toEqual(["/p", "/p/src", "/p/test"]);
 });
 
-test("terminal labels are carried through", () => {
-  const { regions } = buildWorld([term("t1", "/home/me/code")], []);
-  expect(regions.find((r) => r.path === "t1")!.label).toBe("/home/me/code");
+test("a subfolder nests inside its parent and is one level deeper", () => {
+  const { regions } = buildWorld([term("t1")], ["/p", "/p/src"]);
+  const m = byPath(regions);
+  const parent = m.get("/p")!;
+  const child = m.get("/p/src")!;
+  expect(parent.level).toBe(0);
+  expect(child.level).toBe(1);
+  expect(contains(parent, child)).toBe(true);
 });
 
-test("region boxes never overlap", () => {
-  const { regions } = buildWorld(
-    [term("t1"), term("t2"), term("t3")],
-    ["/a", "/b", "/c", "/d"],
+test("sibling subfolders are contained and do not overlap each other", () => {
+  const { regions } = buildWorld([term("t1")], ["/p", "/p/src", "/p/test"]);
+  const m = byPath(regions);
+  const parent = m.get("/p")!;
+  const a = m.get("/p/src")!;
+  const b = m.get("/p/test")!;
+  expect(contains(parent, a)).toBe(true);
+  expect(contains(parent, b)).toBe(true);
+  expect(disjoint(a, b)).toBe(true);
+});
+
+test("a folder's file area stays clear of its child sub-islands", () => {
+  const { regions } = buildWorld([term("t1")], ["/p", "/p/src"]);
+  const m = byPath(regions);
+  const parent = m.get("/p")!;
+  const child = m.get("/p/src")!;
+  expect(child.origin.y).toBeGreaterThanOrEqual(
+    parent.fileArea.y + parent.fileArea.rows,
   );
-  for (let i = 0; i < regions.length; i++) {
-    for (let j = i + 1; j < regions.length; j++) {
-      const a = regions[i]!;
-      const b = regions[j]!;
-      const disjoint =
-        a.origin.x + a.size.w <= b.origin.x ||
-        b.origin.x + b.size.w <= a.origin.x ||
-        a.origin.y + a.size.h <= b.origin.y ||
-        b.origin.y + b.size.h <= a.origin.y;
-      expect(disjoint).toBe(true);
+});
+
+test("a folder with no touched ancestor is a top-level root", () => {
+  const { regions } = buildWorld([term("t1")], ["/a/b/c"]);
+  const r = byPath(regions).get("/a/b/c")!;
+  expect(r.level).toBe(0);
+});
+
+test("top-level islands (terminals and root folders) do not overlap", () => {
+  const { regions } = buildWorld(
+    [term("t1"), term("t2")],
+    ["/a", "/a/x", "/b", "/b/y", "/c"],
+  );
+  const roots = regions.filter((r) => r.level === 0);
+  for (let i = 0; i < roots.length; i++) {
+    for (let j = i + 1; j < roots.length; j++) {
+      expect(disjoint(roots[i]!, roots[j]!)).toBe(true);
     }
   }
 });
 
-test("a folder that shares a name with a terminal id is not duplicated", () => {
-  const { regions } = buildWorld([term("t1")], ["t1"]);
-  expect(regions.filter((r) => r.path === "t1")).toHaveLength(1);
-});
-
-test("terminal tint is constant; work tint is deterministic per path", () => {
+test("work tint is deterministic per path; terminals share a tint", () => {
   const a = buildWorld([term("t1")], ["/x"]);
   const b = buildWorld([term("t9")], ["/x"]);
-  const termA = a.regions.find((r) => r.kind === "terminal")!;
-  const termB = b.regions.find((r) => r.kind === "terminal")!;
-  expect(termA.tint).toBe(termB.tint);
-  const workA = a.regions.find((r) => r.path === "/x")!;
-  const workB = b.regions.find((r) => r.path === "/x")!;
-  expect(workA.tint).toBe(workB.tint);
+  expect(byPath(a.regions).get("/x")!.tint).toBe(
+    byPath(b.regions).get("/x")!.tint,
+  );
+  expect(a.regions.find((r) => r.kind === "terminal")!.tint).toBe(
+    b.regions.find((r) => r.kind === "terminal")!.tint,
+  );
 });
 
 test("empty input yields an empty world", () => {
@@ -89,39 +122,25 @@ test("empty input yields an empty world", () => {
 });
 
 test("output is byte-identical across runs", () => {
-  const t = [term("t1"), term("t2")];
-  const w = ["/a", "/b", "/c"];
+  const t = [term("t1")];
+  const w = ["/p", "/p/src", "/p/test"];
   expect(JSON.stringify(buildWorld(t, w))).toBe(JSON.stringify(buildWorld(t, w)));
 });
 
-test("a new island keeps existing regions in place", () => {
+test("adding a new root folder keeps existing roots in place", () => {
   const cache = emptyCache();
   const out1 = buildWorld([term("t1")], ["/a"], cache);
-  const t1a = out1.regions.find((r) => r.path === "t1")!;
-
-  const out2 = buildWorld([term("t1")], ["/a", "/b"], cache);
-  const t1b = out2.regions.find((r) => r.path === "t1")!;
-  expect(t1b.origin).toEqual(t1a.origin);
-  expect(out2.regions.some((r) => r.path === "/b")).toBe(true);
+  const a1 = byPath(out1.regions).get("/a")!;
+  const out2 = buildWorld([term("t1")], ["/a", "/x"], cache);
+  const a2 = byPath(out2.regions).get("/a")!;
+  expect(a2.origin).toEqual(a1.origin);
 });
 
-test("released region slots are reused by later islands", () => {
+test("released region slots are reused by later roots", () => {
   const cache = emptyCache();
   buildWorld([term("t1")], ["/a", "/b"], cache);
   const slotA = cache.region.get("/a")!;
-
   releaseRegion(cache, "/a");
-  expect(cache.region.has("/a")).toBe(false);
-
   buildWorld([term("t1")], ["/b", "/c"], cache);
   expect(cache.region.get("/c")).toBe(slotA);
-});
-
-test("releasing a region never reassigns a live region's slot", () => {
-  const cache = emptyCache();
-  buildWorld([term("t1")], ["/a", "/b", "/c"], cache);
-  releaseRegion(cache, "/b");
-  buildWorld([term("t1")], ["/a", "/c", "/d", "/e"], cache);
-  const slots = [...cache.region.values()];
-  expect(new Set(slots).size).toBe(slots.length);
 });

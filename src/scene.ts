@@ -270,8 +270,12 @@ export class CityScene extends Phaser.Scene {
     this.terminalIcons = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
 
+    // Parents before children so a child island paints over its parent's
+    // surface (nesting), then by screen position for stable ordering.
     const ordered = [...this.regions].sort(
-      (a, b) => a.origin.x + a.origin.y - (b.origin.x + b.origin.y),
+      (a, b) =>
+        a.level - b.level ||
+        a.origin.x + a.origin.y - (b.origin.x + b.origin.y),
     );
     for (const r of ordered) {
       drawIslandSides(this.sidesGraphics, r);
@@ -305,19 +309,28 @@ export class CityScene extends Phaser.Scene {
 
   // A cable from each terminal island to every folder island an agent on it
   // is currently working in.
+  // The top-level (level 0) folder island that contains this dir, for cabling.
+  private rootRegionFor(dir: string): Region | undefined {
+    for (const r of this.regions) {
+      if (r.kind !== "work" || r.level !== 0) continue;
+      if (dir === r.path || dir.startsWith(`${r.path}/`)) return r;
+    }
+    return undefined;
+  }
+
   private drawCables(agents: AgentSnapshot[]) {
     if (!this.linksGraphics) return;
     this.linksGraphics.clear();
     const drawn = new Set<string>();
     for (const a of agents) {
       if (!a.terminal || !a.activity) continue;
-      const key = `${a.terminal}->${a.activity.dir}`;
-      if (drawn.has(key)) continue;
       const term = this.regionByPath.get(a.terminal);
-      const work = this.regionByPath.get(a.activity.dir);
-      if (!term || !work) continue;
+      const root = this.rootRegionFor(a.activity.dir);
+      if (!term || !root) continue;
+      const key = `${a.terminal}->${root.path}`;
+      if (drawn.has(key)) continue;
       drawn.add(key);
-      drawCable(this.linksGraphics, regionCenter(term), regionCenter(work));
+      drawCable(this.linksGraphics, regionCenter(term), regionCenter(root));
     }
   }
 
@@ -338,11 +351,12 @@ export class CityScene extends Phaser.Scene {
     for (const f of folders) {
       const region = this.regionByPath.get(f.dir);
       if (!region) continue;
-      const cols = Math.max(1, region.size.w - 2);
-      const maxSlots = cols * cols;
+      const fa = region.fileArea;
+      const cols = Math.max(1, fa.cols);
+      const maxSlots = cols * Math.max(1, fa.rows);
       const slot = (i: number) => {
-        const tx = region.origin.x + 1 + (i % cols);
-        const ty = region.origin.y + 1 + Math.floor(i / cols);
+        const tx = fa.x + (i % cols);
+        const ty = fa.y + Math.floor(i / cols);
         const s = tileToScreen(tx, ty);
         return { x: s.x, y: s.y + TILE_H / 2, depth: tx + ty + 0.3 };
       };
