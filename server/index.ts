@@ -58,8 +58,14 @@ type Agent = {
   label: string;
   activity: FileActivity | null;
   activityTs: number;
+  recent: string[];
 };
 const agents = new Map<string, Agent>();
+
+function pushRecent(a: Agent, line: string): void {
+  a.recent.unshift(line);
+  if (a.recent.length > 12) a.recent.length = 12;
+}
 
 function subId(session: string, agentId: unknown): string {
   return `${session}:sub:${agentId ?? "anon"}`;
@@ -77,6 +83,7 @@ function ensureAgent(session: string): Agent {
       label: "claude",
       activity: null,
       activityTs: 0,
+      recent: [],
     };
     agents.set(session, a);
   }
@@ -131,6 +138,7 @@ type ClaudeHook = {
   tool_input?: { file_path?: unknown; command?: unknown };
   agent_id?: unknown;
   agent_type?: unknown;
+  cwd?: unknown;
 };
 
 function ingestClaude(session: string, body: ClaudeHook): void {
@@ -155,6 +163,7 @@ function ingestClaude(session: string, body: ClaudeHook): void {
         label: typeof body.agent_type === "string" ? body.agent_type : "subagent",
         activity: null,
         activityTs: 0,
+        recent: [],
       });
       return;
     }
@@ -165,6 +174,7 @@ function ingestClaude(session: string, body: ClaudeHook): void {
     case "PostToolUse": {
       const id = body.agent_id ? subId(session, body.agent_id) : session;
       const agent = agents.get(id) ?? ensureAgent(session);
+      const post = body.hook_event_name === "PostToolUse";
       const file = body.tool_input?.file_path;
       if (typeof file === "string" && file.startsWith("/")) {
         const direction = body.tool_name === "Read" ? "read" : "write";
@@ -173,6 +183,24 @@ function ingestClaude(session: string, body: ClaudeHook): void {
         agent.activityTs = now;
         touchWorkDir(dir, now);
         recordFile(dir, file, direction, now);
+        if (post) {
+          pushRecent(agent, `${direction === "read" ? "read" : "edit"} ${basename(file)}`);
+        }
+      } else if (body.tool_name === "Bash") {
+        // Bash has no file; show the robot working in the shell's cwd.
+        const cwd = typeof body.cwd === "string" ? body.cwd : "";
+        if (cwd.startsWith("/")) {
+          agent.activity = { path: cwd, dir: cwd, direction: "run" };
+          agent.activityTs = now;
+          touchWorkDir(cwd, now);
+          if (post) {
+            const cmd =
+              typeof body.tool_input?.command === "string"
+                ? body.tool_input.command.replace(/\s+/g, " ").slice(0, 60)
+                : "";
+            pushRecent(agent, `run: ${cmd}`);
+          }
+        }
       }
       return;
     }
@@ -211,6 +239,7 @@ function agentSnapshots(): AgentSnapshot[] {
     tool: a.tool,
     label: a.label,
     activity: a.activity,
+    recent: a.recent,
   }));
 }
 

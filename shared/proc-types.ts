@@ -3,7 +3,7 @@ import type { Region } from "./types.ts";
 export type FileActivity = {
   path: string;
   dir: string;
-  direction: "read" | "write";
+  direction: "read" | "write" | "run";
 };
 
 // One robot on the map: an agent (or one of its subagents) reported by an
@@ -16,6 +16,7 @@ export type AgentSnapshot = {
   tool: string; // robot art source: "claude" | "opencode" | ...
   label: string; // display label
   activity: FileActivity | null; // the folder it is currently working in
+  recent: string[]; // recent human-readable actions, newest first
 };
 
 // A file an agent has touched, shown as an icon on its folder island.

@@ -54,6 +54,7 @@ const FILE_SCALE = 0.46;
 const STACK_SCALE = 0.52;
 const READ_COLOR = "#6bd6ff";
 const WRITE_COLOR = "#ffae5a";
+const RUN_COLOR = "#d7b8ff";
 
 type NpcState = {
   container: Phaser.GameObjects.Container;
@@ -115,6 +116,8 @@ export class CityScene extends Phaser.Scene {
   private stackCounts = new Map<string, number>();
   private tooltip: HTMLDivElement | null = null;
   private modal: HTMLDivElement | null = null;
+  private modalMode: "file" | "agent" | null = null;
+  private openAgentId: string | null = null;
   private dragging = false;
   private sidebar: Sidebar | null = null;
   private terminals: TerminalsUI | null = null;
@@ -414,8 +417,30 @@ export class CityScene extends Phaser.Scene {
     this.tooltip.style.display = "block";
   }
 
+  private openAgentModal(a: AgentSnapshot) {
+    const modal = this.ensureModal();
+    this.modalMode = "agent";
+    this.openAgentId = a.id;
+    (modal.querySelector(".aiso-title") as HTMLElement).textContent =
+      `${a.label} — now`;
+    this.fillAgentBody(a);
+    modal.style.display = "flex";
+  }
+
+  private fillAgentBody(a: AgentSnapshot) {
+    if (!this.modal) return;
+    const body = this.modal.querySelector(".aiso-body") as HTMLElement;
+    const now = a.activity
+      ? `▶ ${a.activity.direction} ${a.activity.dir}`
+      : "▶ idle";
+    const lines = a.recent.length ? a.recent : ["(no actions yet)"];
+    body.textContent = `${now}\n\nrecent:\n${lines.map((l) => `  ${l}`).join("\n")}`;
+  }
+
   private async openFileModal(path: string) {
     const modal = this.ensureModal();
+    this.modalMode = "file";
+    this.openAgentId = null;
     const title = modal.querySelector(".aiso-title") as HTMLElement;
     const body = modal.querySelector(".aiso-body") as HTMLElement;
     title.textContent = path.split("/").pop() ?? path;
@@ -567,6 +592,17 @@ export class CityScene extends Phaser.Scene {
       }
     }
     this.drawCables(agents);
+
+    // Keep an open "what is this agent doing now" panel live.
+    if (
+      this.modalMode === "agent" &&
+      this.openAgentId &&
+      this.modal &&
+      this.modal.style.display !== "none"
+    ) {
+      const a = agents.find((x) => x.id === this.openAgentId);
+      if (a) this.fillAgentBody(a);
+    }
   }
 
   private createNpc(a: AgentSnapshot, home: Region): NpcState {
@@ -582,6 +618,9 @@ export class CityScene extends Phaser.Scene {
     mech.setInteractive({ pixelPerfect: true });
     mech.on("pointerover", () => this.showAgentTooltip(state.latest));
     mech.on("pointerout", () => this.hideTooltip());
+    mech.on("pointerup", (p: Phaser.Input.Pointer) => {
+      if (p.getDistance() < 8) this.openAgentModal(state.latest);
+    });
 
     const top = -mech.displayHeight;
     const label = this.add
@@ -658,8 +697,14 @@ export class CityScene extends Phaser.Scene {
     state.busy = true;
     state.workingDir = act.dir;
     const trip = ++state.tripId;
-    state.badge.setText(act.direction === "read" ? "▼ read" : "▲ write");
-    state.badge.setColor(act.direction === "read" ? READ_COLOR : WRITE_COLOR);
+    const beat =
+      act.direction === "read"
+        ? { text: "▼ read", color: READ_COLOR }
+        : act.direction === "run"
+          ? { text: "⚙ run", color: RUN_COLOR }
+          : { text: "▲ write", color: WRITE_COLOR };
+    state.badge.setText(beat.text);
+    state.badge.setColor(beat.color);
     state.badge.setVisible(true);
 
     const center = {
