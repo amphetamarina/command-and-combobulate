@@ -88,6 +88,31 @@ function ensureAgent(session: string, tool: string): Agent {
   return a;
 }
 
+function ensureSubagent(
+  session: string,
+  agentId: unknown,
+  tool: string,
+  label: string,
+): Agent {
+  const id = subId(session, agentId);
+  let a = agents.get(id);
+  if (!a) {
+    a = {
+      id,
+      terminal: session,
+      kind: "subagent",
+      parent: session,
+      tool,
+      label,
+      activity: null,
+      activityTs: 0,
+      recent: [],
+    };
+    agents.set(id, a);
+  }
+  return a;
+}
+
 function removeSession(session: string): void {
   for (const [id, a] of agents) {
     if (a.terminal === session) agents.delete(id);
@@ -151,18 +176,12 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
       worldDirty = true;
       return;
     case "SubagentStart": {
-      const id = subId(session, body.agent_id);
-      agents.set(id, {
-        id,
-        terminal: session,
-        kind: "subagent",
-        parent: session,
+      ensureSubagent(
+        session,
+        body.agent_id,
         tool,
-        label: typeof body.agent_type === "string" ? body.agent_type : "subagent",
-        activity: null,
-        activityTs: 0,
-        recent: [],
-      });
+        typeof body.agent_type === "string" ? body.agent_type : "subagent",
+      );
       return;
     }
     case "SubagentStop":
@@ -170,8 +189,9 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
       return;
     case "PreToolUse":
     case "PostToolUse": {
-      const id = body.agent_id ? subId(session, body.agent_id) : session;
-      const agent = agents.get(id) ?? ensureAgent(session, tool);
+      const agent = body.agent_id
+        ? ensureSubagent(session, body.agent_id, tool, "subagent")
+        : ensureAgent(session, tool);
       const post = body.hook_event_name === "PostToolUse";
       const file = body.tool_input?.file_path;
       if (typeof file === "string" && file.startsWith("/")) {
