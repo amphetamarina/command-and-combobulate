@@ -1,4 +1,5 @@
 import type { Region } from "../shared/types.ts";
+import type { FileContent } from "../shared/proc-types.ts";
 
 export type WorldResponse = {
   regions: Region[];
@@ -10,6 +11,14 @@ export async function fetchWorld(): Promise<WorldResponse> {
     throw new Error(`/world responded ${res.status}`);
   }
   return (await res.json()) as WorldResponse;
+}
+
+export async function fetchFile(path: string): Promise<FileContent> {
+  const res = await fetch(`/file?path=${encodeURIComponent(path)}`);
+  if (!res.ok) {
+    throw new Error(`/file responded ${res.status}`);
+  }
+  return (await res.json()) as FileContent;
 }
 
 const DEFAULT_API_PORT = 3001;

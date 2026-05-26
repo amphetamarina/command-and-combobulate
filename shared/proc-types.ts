@@ -18,6 +18,25 @@ export type AgentSnapshot = {
   activity: FileActivity | null; // the folder it is currently working in
 };
 
+// A file an agent has touched, shown as an icon on its folder island.
+export type FileEntry = {
+  path: string;
+  name: string;
+  size: number;
+  direction: "read" | "write";
+  ts: number;
+};
+
+export type FolderFiles = { dir: string; entries: FileEntry[] };
+
+export type FileContent = {
+  path: string;
+  name: string;
+  size: number;
+  content: string;
+  truncated: boolean;
+};
+
 export type LiveMessage =
   | {
       kind: "agents";
@@ -27,4 +46,8 @@ export type LiveMessage =
   | {
       kind: "world-delta";
       regions: Region[];
+    }
+  | {
+      kind: "files";
+      files: FolderFiles[];
     };

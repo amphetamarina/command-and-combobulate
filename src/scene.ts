@@ -1,7 +1,12 @@
 import Phaser from "phaser";
 import type { Region } from "../shared/types.ts";
-import type { AgentSnapshot, LiveMessage } from "../shared/proc-types.ts";
-import { liveSocketUrl } from "./api.ts";
+import type {
+  AgentSnapshot,
+  FileEntry,
+  FolderFiles,
+  LiveMessage,
+} from "../shared/proc-types.ts";
+import { fetchFile, liveSocketUrl } from "./api.ts";
 import { Sidebar, SIDEBAR_FRACTION } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
 import {
@@ -45,6 +50,8 @@ const WANDER_STAGGER_MS = 2000;
 const COMMUTE_MS = 1400;
 const WORK_MS = 1800;
 const SUBAGENT_SCALE = 0.66;
+const FILE_SCALE = 0.46;
+const STACK_SCALE = 0.52;
 const READ_COLOR = "#6bd6ff";
 const WRITE_COLOR = "#ffae5a";
 
@@ -68,6 +75,12 @@ type CitySceneData = { regions: Region[] };
 function formatRegionLabel(path: string): string {
   const home = path.replace(/^\/home\/[^/]+/, "~").replace(/^\/root/, "~");
   return home.length > 40 ? `…${home.slice(-39)}` : home;
+}
+
+function formatSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
 // Stable small integer from an agent id, for the home-tile slot and art pick.
@@ -94,7 +107,14 @@ export class CityScene extends Phaser.Scene {
   private edgesGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private terminalIcons: Phaser.GameObjects.Sprite[] = [];
+  private fileSprites = new Map<
+    string,
+    { sprite: Phaser.GameObjects.Sprite; kind: string }
+  >();
+  private fileMeta = new Map<string, FileEntry>();
+  private stackCounts = new Map<string, number>();
   private tooltip: HTMLDivElement | null = null;
+  private modal: HTMLDivElement | null = null;
   private dragging = false;
   private sidebar: Sidebar | null = null;
   private terminals: TerminalsUI | null = null;
@@ -117,6 +137,13 @@ export class CityScene extends Phaser.Scene {
     this.load.spritesheet(
       "icon/terminal-flash",
       "/isotop-assets/sci-fi/icons/Spritesheets/terminal-typing-flash-8frame.png",
+      { frameWidth: 128, frameHeight: 128 },
+    );
+    this.load.image("icon/file", "/isotop-assets/sci-fi/icons/file.png");
+    this.load.image("icon/file-stack", "/isotop-assets/sci-fi/icons/file-stack.png");
+    this.load.spritesheet(
+      "icon/file-writing",
+      "/isotop-assets/sci-fi/icons/Spritesheets/file-writing-8frame.png",
       { frameWidth: 128, frameHeight: 128 },
     );
   }
@@ -211,6 +238,15 @@ export class CityScene extends Phaser.Scene {
       frameRate: 6,
       repeat: -1,
     });
+    this.anims.create({
+      key: "file-writing",
+      frames: this.anims.generateFrameNumbers("icon/file-writing", {
+        start: 0,
+        end: 7,
+      }),
+      frameRate: 8,
+      repeat: -1,
+    });
   }
 
   private renderRegions() {
@@ -282,6 +318,192 @@ export class CityScene extends Phaser.Scene {
     }
   }
 
+  // Render file icons on each folder island, one per file an agent touched,
+  // collapsing the overflow into a stack icon when an island fills up.
+  private updateFiles(folders: FolderFiles[]) {
+    type Want = {
+      x: number;
+      y: number;
+      depth: number;
+      kind: "read" | "write" | "stack";
+      path?: string;
+    };
+    const desired = new Map<string, Want>();
+    this.fileMeta.clear();
+    this.stackCounts.clear();
+
+    for (const f of folders) {
+      const region = this.regionByPath.get(f.dir);
+      if (!region) continue;
+      const cols = Math.max(1, region.size.w - 2);
+      const maxSlots = cols * cols;
+      const slot = (i: number) => {
+        const tx = region.origin.x + 1 + (i % cols);
+        const ty = region.origin.y + 1 + Math.floor(i / cols);
+        const s = tileToScreen(tx, ty);
+        return { x: s.x, y: s.y + TILE_H / 2, depth: tx + ty + 0.3 };
+      };
+      const individual =
+        f.entries.length <= maxSlots ? f.entries.length : maxSlots - 1;
+      for (let i = 0; i < individual; i++) {
+        const e = f.entries[i]!;
+        this.fileMeta.set(e.path, e);
+        desired.set(e.path, { ...slot(i), kind: e.direction, path: e.path });
+      }
+      if (f.entries.length > maxSlots) {
+        this.stackCounts.set(f.dir, f.entries.length - (maxSlots - 1));
+        desired.set(`stack:${f.dir}`, { ...slot(maxSlots - 1), kind: "stack" });
+      }
+    }
+
+    for (const [key, fs] of this.fileSprites) {
+      if (!desired.has(key)) {
+        fs.sprite.destroy();
+        this.fileSprites.delete(key);
+      }
+    }
+    for (const [key, d] of desired) {
+      let fs = this.fileSprites.get(key);
+      if (!fs) {
+        const sprite = this.add
+          .sprite(d.x, d.y, "icon/file")
+          .setOrigin(0.5, 0.9);
+        sprite.setInteractive({ pixelPerfect: true });
+        sprite.on("pointerout", () => this.hideTooltip());
+        if (d.kind === "stack") {
+          const dir = key.slice("stack:".length);
+          sprite.on("pointerover", () =>
+            this.showText(`${this.stackCounts.get(dir) ?? 0} more files`),
+          );
+        } else {
+          const path = d.path!;
+          sprite.on("pointerover", () => this.showFileTooltip(path));
+          sprite.on("pointerup", (p: Phaser.Input.Pointer) => {
+            if (p.getDistance() < 8) void this.openFileModal(path);
+          });
+        }
+        fs = { sprite, kind: "" };
+        this.fileSprites.set(key, fs);
+      }
+      fs.sprite.setPosition(d.x, d.y).setDepth(d.depth);
+      if (fs.kind !== d.kind) {
+        fs.kind = d.kind;
+        if (d.kind === "write") {
+          fs.sprite.play("file-writing", true);
+          fs.sprite.setScale(FILE_SCALE);
+        } else {
+          fs.sprite.stop();
+          fs.sprite.setTexture(
+            d.kind === "stack" ? "icon/file-stack" : "icon/file",
+          );
+          fs.sprite.setScale(d.kind === "stack" ? STACK_SCALE : FILE_SCALE);
+        }
+      }
+    }
+  }
+
+  private showFileTooltip(path: string) {
+    const e = this.fileMeta.get(path);
+    if (!e) return;
+    this.showText(`${e.name}\n${e.direction} · ${formatSize(e.size)}`);
+  }
+
+  private showText(text: string) {
+    if (this.dragging || !this.tooltip) return;
+    this.tooltip.textContent = text;
+    this.tooltip.style.display = "block";
+  }
+
+  private async openFileModal(path: string) {
+    const modal = this.ensureModal();
+    const title = modal.querySelector(".aiso-title") as HTMLElement;
+    const body = modal.querySelector(".aiso-body") as HTMLElement;
+    title.textContent = path.split("/").pop() ?? path;
+    body.textContent = "loading…";
+    modal.style.display = "flex";
+    try {
+      const fc = await fetchFile(path);
+      title.textContent = `${fc.name}  ·  ${formatSize(fc.size)}${fc.truncated ? "  · truncated" : ""}`;
+      body.textContent = fc.content;
+    } catch (err) {
+      body.textContent = `failed to load: ${(err as Error).message}`;
+    }
+  }
+
+  private ensureModal(): HTMLDivElement {
+    if (this.modal) return this.modal;
+    const overlay = document.createElement("div");
+    overlay.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "display:none",
+      "align-items:center",
+      "justify-content:center",
+      "background:rgba(14,9,15,0.6)",
+      "z-index:10000",
+    ].join(";");
+    const box = document.createElement("div");
+    box.style.cssText = [
+      "display:flex",
+      "flex-direction:column",
+      "width:min(70vw,820px)",
+      "height:min(72vh,640px)",
+      "background:#1a0f16",
+      "border:1px solid #8a4a6a",
+      "border-radius:8px",
+      "box-shadow:0 8px 40px rgba(0,0,0,0.6)",
+      "overflow:hidden",
+    ].join(";");
+    const header = document.createElement("div");
+    header.style.cssText = [
+      "display:flex",
+      "align-items:center",
+      "justify-content:space-between",
+      "gap:12px",
+      "padding:10px 14px",
+      "background:#241620",
+      "border-bottom:1px solid #4a2e3e",
+      "font-family:'JetBrains Mono',ui-monospace,monospace",
+      "color:#ffd0e6",
+      "font-size:13px",
+    ].join(";");
+    const title = document.createElement("span");
+    title.className = "aiso-title";
+    const close = document.createElement("button");
+    close.textContent = "×";
+    close.style.cssText = [
+      "background:none",
+      "border:none",
+      "color:#ff8aa8",
+      "font-size:20px",
+      "line-height:1",
+      "cursor:pointer",
+    ].join(";");
+    close.addEventListener("click", () => (overlay.style.display = "none"));
+    header.append(title, close);
+    const body = document.createElement("pre");
+    body.className = "aiso-body";
+    body.style.cssText = [
+      "margin:0",
+      "padding:14px",
+      "overflow:auto",
+      "flex:1",
+      "white-space:pre",
+      "font-family:'JetBrains Mono',ui-monospace,monospace",
+      "font-size:12px",
+      "line-height:1.5",
+      "color:#e9d6e0",
+    ].join(";");
+    box.append(header, body);
+    overlay.append(box);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.style.display = "none";
+    });
+    document.body.appendChild(overlay);
+    this.modal = overlay;
+    return overlay;
+  }
+
   private startLiveSocket() {
     let lastCount = -1;
     const connect = () => {
@@ -306,6 +528,8 @@ export class CityScene extends Phaser.Scene {
           this.regions = msg.regions;
           this.renderRegions();
           console.log(`[ws] ${msg.regions.length} islands`);
+        } else if (msg.kind === "files") {
+          this.updateFiles(msg.files);
         }
       });
       ws.addEventListener("close", () => {
@@ -590,6 +814,8 @@ export class CityScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.tooltip?.remove();
       this.tooltip = null;
+      this.modal?.remove();
+      this.modal = null;
     });
   }
 

@@ -1,24 +1,33 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile, readlink } from "node:fs/promises";
+import { statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import type { World } from "../shared/types.ts";
-import type { AgentSnapshot, FileActivity } from "../shared/proc-types.ts";
+import type {
+  AgentSnapshot,
+  FileActivity,
+  FileEntry,
+} from "../shared/proc-types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
-const WORK_DIR_TTL_MS = 15000;
+const WORK_DIR_TTL_MS = 45000;
 const ACTIVITY_TTL_MS = 6000;
+const FILES_PER_DIR = 24;
+const FILE_MAX_BYTES = 256 * 1024;
 const CACHE_PATH =
   process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
 const INGEST_TOKEN = process.env.AISO_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
 const workDirLastActive = new Map<string, number>();
+// dir -> (file path -> entry): the files an agent has touched in each folder.
+const filesByDir = new Map<string, Map<string, FileEntry>>();
 const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 let worldDirty = false;
@@ -85,6 +94,35 @@ function touchWorkDir(dir: string, now: number): void {
   workDirLastActive.set(dir, now);
 }
 
+function recordFile(
+  dir: string,
+  path: string,
+  direction: "read" | "write",
+  now: number,
+): void {
+  let m = filesByDir.get(dir);
+  if (!m) {
+    m = new Map();
+    filesByDir.set(dir, m);
+  }
+  let size = 0;
+  try {
+    size = statSync(path).size;
+  } catch {
+    /* gone or unreadable */
+  }
+  m.set(path, { path, name: basename(path), size, direction, ts: now });
+  if (m.size > FILES_PER_DIR) {
+    const oldest = [...m.values()].sort((a, b) => a.ts - b.ts)[0];
+    if (oldest) m.delete(oldest.path);
+  }
+}
+
+function isTrackedFile(path: string): boolean {
+  for (const m of filesByDir.values()) if (m.has(path)) return true;
+  return false;
+}
+
 // Normalize a Claude Code hook payload into agent/world state. The terminal
 // island id arrives out of band in the X-Aiso-Session header.
 type ClaudeHook = {
@@ -129,13 +167,12 @@ function ingestClaude(session: string, body: ClaudeHook): void {
       const agent = agents.get(id) ?? ensureAgent(session);
       const file = body.tool_input?.file_path;
       if (typeof file === "string" && file.startsWith("/")) {
-        agent.activity = {
-          path: file,
-          dir: dirname(file),
-          direction: body.tool_name === "Read" ? "read" : "write",
-        };
+        const direction = body.tool_name === "Read" ? "read" : "write";
+        const dir = dirname(file);
+        agent.activity = { path: file, dir, direction };
         agent.activityTs = now;
-        touchWorkDir(agent.activity.dir, now);
+        touchWorkDir(dir, now);
+        recordFile(dir, file, direction, now);
       }
       return;
     }
@@ -193,6 +230,18 @@ function broadcastAgents(): void {
   );
 }
 
+function filesMessage(): string {
+  const files = [...filesByDir.entries()].map(([dir, m]) => ({
+    dir,
+    entries: [...m.values()].sort((a, b) => b.ts - a.ts),
+  }));
+  return JSON.stringify({ kind: "files", files });
+}
+
+function broadcastFiles(): void {
+  broadcast(filesMessage());
+}
+
 async function broadcastWorld(): Promise<void> {
   const world = await buildWorldFor();
   broadcast(JSON.stringify({ kind: "world-delta", regions: world.regions }));
@@ -233,9 +282,30 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (session) {
       ingestClaude(session, body);
       broadcastAgents();
+      broadcastFiles();
     }
     // Ack immediately; hooks are synchronous and must not block the agent.
     return sendJson(res, 200, {});
+  }
+
+  if (pathname === "/file" && method === "GET") {
+    const path = url.searchParams.get("path") ?? "";
+    if (!isTrackedFile(path)) {
+      return sendJson(res, 404, { error: "not a tracked file" });
+    }
+    try {
+      const buf = await readFile(path);
+      const truncated = buf.length > FILE_MAX_BYTES;
+      return sendJson(res, 200, {
+        path,
+        name: basename(path),
+        size: buf.length,
+        content: buf.subarray(0, FILE_MAX_BYTES).toString("utf8"),
+        truncated,
+      });
+    } catch (err) {
+      return sendJson(res, 500, { error: (err as Error).message });
+    }
   }
 
   if (pathname === "/term/new" && method === "POST") {
@@ -288,6 +358,23 @@ httpServer.on("upgrade", (req, socket, head) => {
     wss.handleUpgrade(req, socket, head, (ws) => {
       liveClients.add(ws);
       console.log("[ws] client connected");
+      // Snapshot the current world to the new client so it is in sync without
+      // waiting for the next change (otherwise islands appear only on reload).
+      if (ws.readyState === ws.OPEN) {
+        ws.send(filesMessage());
+        ws.send(
+          JSON.stringify({
+            kind: "agents",
+            capturedAt: Date.now(),
+            agents: agentSnapshots(),
+          }),
+        );
+      }
+      void buildWorldFor().then((w) => {
+        if (ws.readyState === ws.OPEN) {
+          ws.send(JSON.stringify({ kind: "world-delta", regions: w.regions }));
+        }
+      });
       ws.on("close", () => {
         liveClients.delete(ws);
         console.log("[ws] client disconnected");
@@ -340,6 +427,7 @@ setInterval(() => {
   for (const [dir, last] of workDirLastActive) {
     if (now - last > WORK_DIR_TTL_MS) {
       workDirLastActive.delete(dir);
+      filesByDir.delete(dir);
       releaseRegion(placements, dir);
       worldDirty = true;
     }
@@ -369,4 +457,5 @@ setInterval(() => {
     void broadcastWorld();
   }
   broadcastAgents();
+  broadcastFiles();
 }, TICK_MS);
