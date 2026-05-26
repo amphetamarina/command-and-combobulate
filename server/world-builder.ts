@@ -6,7 +6,7 @@ import type { Region, World } from "../shared/types.ts";
 // stride keeps the meta-grid simple and gap-free.
 const TERMINAL_SIZE = 4;
 const WORK_SIZE = 5;
-const REGION_GUTTER = 2;
+const REGION_GUTTER = 1;
 const STRIDE = Math.max(TERMINAL_SIZE, WORK_SIZE) + REGION_GUTTER;
 
 const TERMINAL_TINT = 0xff9ec7;
