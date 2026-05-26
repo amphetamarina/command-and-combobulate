@@ -33,11 +33,11 @@ export class Sidebar {
 
     const header = document.createElement("div");
     header.style.cssText =
-      "display:flex;align-items:center;gap:12px;flex:none";
+      "display:flex;flex-direction:column;align-items:center;gap:12px;flex:none;padding-top:6px";
     const title = document.createElement("img");
     title.src = "/logo/aiso-logo.png";
     title.alt = "AIso";
-    title.style.cssText = "height:30px;width:auto;display:block;flex:none";
+    title.style.cssText = "height:64px;width:auto;display:block;flex:none";
     const buildBtn = document.createElement("button");
     buildBtn.style.cssText = [
       "display:flex",
