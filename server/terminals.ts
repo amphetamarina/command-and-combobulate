@@ -63,7 +63,12 @@ class Terminal {
   }
 }
 
-export type IngestConfig = { url: string; token: string; pluginDir: string };
+export type IngestConfig = {
+  url: string;
+  token: string;
+  pluginDir: string;
+  opencodePlugin: string;
+};
 
 export class TerminalManager {
   private terminals = new Map<string, Terminal>();
@@ -83,6 +88,7 @@ export class TerminalManager {
       AISO_INGEST: this.ingest.url,
       AISO_TOKEN: this.ingest.token,
       AISO_PATH: this.ingest.pluginDir,
+      AISO_OPENCODE: this.ingest.opencodePlugin,
     };
     this.terminals.set(
       id,

@@ -32,20 +32,18 @@ const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 let worldDirty = false;
 
-// Absolute path to the Claude adapter, injected as AISO_PATH so agents can be
-// launched with `claude --plugin-dir $AISO_PATH`.
-const PLUGIN_DIR = resolve(
-  import.meta.dirname,
-  "..",
-  "integrations",
-  "claude",
-  "aiso",
-);
+// Absolute paths to the adapters, injected as AISO_PATH (Claude plugin dir,
+// used as `claude --plugin-dir $AISO_PATH`) and AISO_OPENCODE (the opencode
+// plugin file).
+const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
+const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "aiso");
+const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "aiso", "aiso.js");
 
 const terminals = new TerminalManager({
   url: `http://127.0.0.1:${PORT}/ingest`,
   token: INGEST_TOKEN,
   pluginDir: PLUGIN_DIR,
+  opencodePlugin: OPENCODE_PLUGIN,
 });
 
 // One robot's worth of state, built from adapter events rather than /proc.
@@ -71,7 +69,7 @@ function subId(session: string, agentId: unknown): string {
   return `${session}:sub:${agentId ?? "anon"}`;
 }
 
-function ensureAgent(session: string): Agent {
+function ensureAgent(session: string, tool: string): Agent {
   let a = agents.get(session);
   if (!a) {
     a = {
@@ -79,8 +77,8 @@ function ensureAgent(session: string): Agent {
       terminal: session,
       kind: "agent",
       parent: null,
-      tool: "claude",
-      label: "claude",
+      tool,
+      label: tool,
       activity: null,
       activityTs: 0,
       recent: [],
@@ -141,11 +139,11 @@ type ClaudeHook = {
   cwd?: unknown;
 };
 
-function ingestClaude(session: string, body: ClaudeHook): void {
+function ingest(session: string, tool: string, body: ClaudeHook): void {
   const now = Date.now();
   switch (body.hook_event_name) {
     case "SessionStart":
-      ensureAgent(session);
+      ensureAgent(session, tool);
       return;
     case "SessionEnd":
     case "Stop":
@@ -159,7 +157,7 @@ function ingestClaude(session: string, body: ClaudeHook): void {
         terminal: session,
         kind: "subagent",
         parent: session,
-        tool: "claude",
+        tool,
         label: typeof body.agent_type === "string" ? body.agent_type : "subagent",
         activity: null,
         activityTs: 0,
@@ -173,7 +171,7 @@ function ingestClaude(session: string, body: ClaudeHook): void {
     case "PreToolUse":
     case "PostToolUse": {
       const id = body.agent_id ? subId(session, body.agent_id) : session;
-      const agent = agents.get(id) ?? ensureAgent(session);
+      const agent = agents.get(id) ?? ensureAgent(session, tool);
       const post = body.hook_event_name === "PostToolUse";
       const file = body.tool_input?.file_path;
       if (typeof file === "string" && file.startsWith("/")) {
@@ -302,6 +300,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return sendJson(res, 401, { ok: false });
     }
     const session = String(req.headers["x-aiso-session"] ?? "");
+    const tool = String(req.headers["x-aiso-tool"] ?? "claude");
     let body: ClaudeHook = {};
     try {
       body = (await readBody(req)) as ClaudeHook;
@@ -309,7 +308,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       /* ignore malformed */
     }
     if (session) {
-      ingestClaude(session, body);
+      ingest(session, tool, body);
       broadcastAgents();
       broadcastFiles();
     }
