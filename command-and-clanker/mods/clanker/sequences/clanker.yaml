@@ -1,7 +1,12 @@
 clankerterminal:
 	Inherits: fact
-	# The Terminal keeps the construction-yard body but takes a custom, unique
-	# build cameo (a user-provided PNG) so it does not collide with another
-	# building's icon in the palette.
+	# Custom Terminal building art (user-provided PNG), scaled down from its
+	# 192px source toward the 3x4 footprint. The placement offset still needs a
+	# visual tuning pass.
+	idle:
+		Filename: clanker|uibits/terminal-building.png
+		Scale: 0.5
+	# Custom, unique build cameo so it does not collide with another building's
+	# icon in the palette.
 	icon:
 		Filename: clanker|uibits/terminal-icon.png

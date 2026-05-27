@@ -215,7 +215,7 @@ Hotkeys:
 	common|hotkeys/control-groups.yaml
 	ra|hotkeys.yaml
 
-LoadScreen: LogoStripeLoadScreen
+LoadScreen: ClankerLoadScreen
 	Image: clanker|uibits/clanker-loadscreen.png
 	Image2x: clanker|uibits/clanker-loadscreen-2x.png
 	Image3x: clanker|uibits/clanker-loadscreen-3x.png
