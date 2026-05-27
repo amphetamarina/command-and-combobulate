@@ -1,18 +1,18 @@
 # Architecture
 
-AIso is split so the backend ingests agent activity and owns the terminals,
+Command & Clanker is split so the backend ingests agent activity and owns the terminals,
 and the frontend only draws. The map is **event-driven**: agents report their
 tool calls to the server, which turns them into islands and robots. (The repo
-is still named `isotop`.)
+is still named `Command & Clanker`.)
 
 ```
-   Agent (Claude Code, opencode) running in an AIso terminal
+   Agent (Claude Code, opencode) running in an Command & Clanker terminal
             |  adapter posts tool calls / lifecycle events
             v
    Node server (backend)
      - POST /ingest: normalize agent events -> agents + folder islands
      - world builder: terminal islands + folder islands (no buildings)
-     - TerminalManager: real PTYs via node-pty; injects AISO_* into the shell
+     - TerminalManager: real PTYs via node-pty; injects CLANKER_* into the shell
             |
    WebSocket (agent snapshots + world deltas)  +  terminal I/O
             v
@@ -29,10 +29,10 @@ runner. Shared modules avoid runtime-specific APIs so they work in both.
 ## How an agent reaches the map
 
 When you build a terminal, `TerminalManager` spawns the shell with
-`AISO_SESSION` (the terminal island id), `AISO_INGEST` (the ingest URL), and
-`AISO_TOKEN` in its environment. An agent launched in that shell runs an AIso
+`CLANKER_SESSION` (the terminal island id), `CLANKER_INGEST` (the ingest URL), and
+`CLANKER_TOKEN` in its environment. An agent launched in that shell runs an Command & Clanker
 adapter (see `integrations/`) that POSTs each tool call to `/ingest`,
-authorized by the token and tagged with the session via the `X-Aiso-Session`
+authorized by the token and tagged with the session via the `X-Clanker-Session`
 header. The server never scrapes `/proc`; it only knows what agents report.
 
 ## Backend (Node)
@@ -51,7 +51,7 @@ header. The server never scrapes `/proc`; it only knows what agents report.
   `PlacementCache` keeps positions stable and reclaims slots when a terminal
   closes or a folder goes idle.
 - **TerminalManager** (`server/terminals.ts`): spawns a real PTY per session
-  with `node-pty`, injects the `AISO_*` env, buffers recent output, and bridges
+  with `node-pty`, injects the `CLANKER_*` env, buffers recent output, and bridges
   it to WebSocket clients. Because it is a true PTY it has a real window size
   and can be resized live, so full-screen TUIs (Claude Code, opencode) reflow
   to the terminal's actual width.
@@ -59,7 +59,7 @@ header. The server never scrapes `/proc`; it only knows what agents report.
 ### HTTP / WebSocket surface (`server/index.ts`)
 
 - `POST /ingest` — agent events (token in `Authorization`, terminal id in
-  `X-Aiso-Session`). Acks instantly.
+  `X-Clanker-Session`). Acks instantly.
 - `GET /world` — one-shot world snapshot (the island regions).
 - `POST /term/new` (optional `{cols, rows}`), `POST /term/kill`, `WS /term?id=`
   — terminal lifecycle and I/O. Over the WS the client sends `{i: input}` for
@@ -87,7 +87,7 @@ header. The server never scrapes `/proc`; it only knows what agents report.
 Island layout is deterministic: positions come from the `PlacementCache` slot
 assignment (not randomness), and work-island tint is `seedrandom(folder_path)`
 while terminal islands share one tint. The cache is persisted to
-`.isotop-cache.json` (`server/persistence.ts`), so islands stay put across
+`.clanker-cache.json` (`server/persistence.ts`), so islands stay put across
 restarts.
 
 ## Data shapes
@@ -117,7 +117,7 @@ type AgentSnapshot = {
 
 - **opencode adapter**: the same `/ingest` contract, fed by an opencode plugin
   (`tool.execute.before/after` + `event`). Claude Code is wired first.
-- **Installer**: an `aiso install` that registers the adapter and templates the
+- **Installer**: an `clanker install` that registers the adapter and templates the
   ingest URL/port, plus marketplace/npm distribution.
 - **Action vocabulary**: richer beats for bash/search/spawn and per-tool
   animations beyond read/write.

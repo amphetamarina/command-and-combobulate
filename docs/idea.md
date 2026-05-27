@@ -1,4 +1,4 @@
-# isotop: the idea
+# Command & Clanker: the idea
 
 ## Vision
 

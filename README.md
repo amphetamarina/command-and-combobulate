@@ -1,11 +1,11 @@
-# AIso
+# Command & Clanker
 
 https://github.com/user-attachments/assets/4b686165-1887-4f58-a574-95c35fa02fb7
 
 `top`, but isometric — a live pixel-art map of what your AI agents are doing.
-Build a terminal inside AIso and run an agent in it; every file it reads or
+Build a terminal inside Command & Clanker and run an agent in it; every file it reads or
 writes, every command it runs, and every subagent it spawns appears on the map
-in real time. (The repository and package are still named `isotop`.)
+in real time. (The repository and package are still named `Command & Clanker`.)
 
 ## Quick start
 
@@ -22,16 +22,16 @@ the map, install the adapters once:
 bun run setup   # wires the Claude Code + opencode adapters into your config
 ```
 
-Then run an agent inside any AIso terminal and watch it work:
+Then run an agent inside any Command & Clanker terminal and watch it work:
 
 ```sh
 claude       # Claude Code
 opencode     # opencode
 ```
 
-The adapters only report from inside an AIso terminal (where `AISO_SESSION` is
+The adapters only report from inside an Command & Clanker terminal (where `CLANKER_SESSION` is
 injected), so they stay quiet everywhere else. No-install alternative for
-Claude: `claude --plugin-dir $AISO_PATH`.
+Claude: `claude --plugin-dir $CLANKER_PATH`.
 
 > The backend runs under **Node** (for `node-pty`); tests run under **Bun**.
 > `bun install` compiles `node-pty`, which needs a C/C++ toolchain
@@ -47,25 +47,25 @@ Claude: `claude --plugin-dir $AISO_PATH`.
 - **Folder islands** — each folder an agent touches, cabled to its terminal,
   with a file icon per file (stacking when there are many). Hover a file for its
   name and size; click it to read its contents.
-- **Left sidebar** — the AIso logo, **+ Terminal**, tabs for open terminals, and
+- **Left sidebar** — the Command & Clanker logo, **+ Terminal**, tabs for open terminals, and
   the active terminal docked inline: a real `node-pty` shell that resizes with
   the panel, so full-screen TUIs render correctly.
 
 ## How it works
 
 Agents report their tool calls to the backend at `POST /ingest` through an
-adapter — a Claude Code plugin in [`integrations/`](integrations/). The AIso
+adapter — a Claude Code plugin in [`integrations/`](integrations/). The Command & Clanker
 terminal injects the ingest URL, a token, and the terminal-island id into the
 shell, so events land on the right island. The backend turns them into islands
 and robots and streams the world to a Vite + Phaser 3 frontend over WebSocket.
-There is no `/proc` scraping; AIso shows only what agents report. See
+There is no `/proc` scraping; Command & Clanker shows only what agents report. See
 [`docs/architecture.md`](docs/architecture.md).
 
 The Claude adapter is a plugin under
-[`integrations/claude/aiso`](integrations/claude/aiso) (with a marketplace
+[`integrations/claude/clanker`](integrations/claude/clanker) (with a marketplace
 manifest), and the opencode adapter is a package under
-[`integrations/opencode/aiso`](integrations/opencode/aiso)
-(`@aiso/opencode-plugin`). `bun run setup` wires the local copies; to share
+[`integrations/opencode/clanker`](integrations/opencode/clanker)
+(`@clanker/opencode-plugin`). `bun run setup` wires the local copies; to share
 them, add the Claude marketplace (`/plugin marketplace add …/integrations/claude`)
 or publish the opencode package and list it in `opencode.json`.
 
