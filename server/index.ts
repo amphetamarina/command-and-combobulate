@@ -22,7 +22,7 @@ const FILES_PER_DIR = 24;
 const FILE_MAX_BYTES = 256 * 1024;
 const CACHE_PATH =
   process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
-const INGEST_TOKEN = process.env.AISO_TOKEN ?? randomUUID();
+const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
 const workDirLastActive = new Map<string, number>();
@@ -32,8 +32,8 @@ const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 let worldDirty = false;
 
-// Absolute paths to the adapters, injected as AISO_PATH (Claude plugin dir,
-// used as `claude --plugin-dir $AISO_PATH`) and AISO_OPENCODE (the opencode
+// Absolute paths to the adapters, injected as CLANKER_PATH (Claude plugin dir,
+// used as `claude --plugin-dir $CLANKER_PATH`) and CLANKER_OPENCODE (the opencode
 // plugin file).
 const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
 const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "aiso");
@@ -154,7 +154,7 @@ function isTrackedFile(path: string): boolean {
 }
 
 // Normalize a Claude Code hook payload into agent/world state. The terminal
-// island id arrives out of band in the X-Aiso-Session header.
+// island id arrives out of band in the X-Clanker-Session header.
 type ClaudeHook = {
   hook_event_name?: string;
   tool_name?: string;
@@ -319,8 +319,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (req.headers["authorization"] !== `Bearer ${INGEST_TOKEN}`) {
       return sendJson(res, 401, { ok: false });
     }
-    const session = String(req.headers["x-aiso-session"] ?? "");
-    const tool = String(req.headers["x-aiso-tool"] ?? "claude");
+    const session = String(req.headers["x-clanker-session"] ?? "");
+    const tool = String(req.headers["x-clanker-tool"] ?? "claude");
     let body: ClaudeHook = {};
     try {
       body = (await readBody(req)) as ClaudeHook;

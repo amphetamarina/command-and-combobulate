@@ -1,18 +1,20 @@
-// AIso adapter for opencode. Streams tool calls to the AIso map (POST /ingest)
-// so the agent's reads, writes, and commands animate on its terminal island.
+// Command & Clanker adapter for opencode. Streams tool calls to the map
+// (POST /ingest) so the agent's reads, writes, and commands animate on its
+// terminal island.
 //
 // It posts the same Claude-shaped payload the server already understands, plus
-// an `X-Aiso-Tool: opencode` header so the robot uses the opencode art. The
-// AIso terminal injects AISO_INGEST / AISO_TOKEN / AISO_SESSION, which tie the
-// events to the right island and authorize the local endpoint.
+// an `X-Clanker-Tool: opencode` header so the robot uses the opencode art. The
+// Command & Clanker terminal injects CLANKER_INGEST / CLANKER_TOKEN /
+// CLANKER_SESSION, which tie the events to the right island and authorize the
+// local endpoint.
 //
 // Subagents run in child opencode sessions (a session with a parentID). We
 // track those and tag their tool calls with `agent_id` so they render as their
 // own smaller robots.
 
-const INGEST = process.env.AISO_INGEST;
-const TOKEN = process.env.AISO_TOKEN;
-const SESSION = process.env.AISO_SESSION;
+const INGEST = process.env.CLANKER_INGEST;
+const TOKEN = process.env.CLANKER_TOKEN;
+const SESSION = process.env.CLANKER_SESSION;
 
 const TOOL_MAP = {
   read: "Read",
@@ -33,8 +35,8 @@ async function send(body) {
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${TOKEN}`,
-        "x-aiso-session": SESSION,
-        "x-aiso-tool": "opencode",
+        "x-clanker-session": SESSION,
+        "x-clanker-tool": "opencode",
       },
       body: JSON.stringify(body),
     });
@@ -43,7 +45,7 @@ async function send(body) {
   }
 }
 
-export const AIso = async ({ directory }) => {
+export const Clanker = async ({ directory }) => {
   await send({ hook_event_name: "SessionStart" });
   return {
     "tool.execute.after": async (input) => {
@@ -85,4 +87,4 @@ export const AIso = async ({ directory }) => {
   };
 };
 
-export default AIso;
+export default Clanker;

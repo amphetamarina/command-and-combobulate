@@ -84,11 +84,11 @@ export class TerminalManager {
     // The agent's adapter reads these to tag its events with this island and
     // reach the ingest endpoint.
     const env = {
-      AISO_SESSION: id,
-      AISO_INGEST: this.ingest.url,
-      AISO_TOKEN: this.ingest.token,
-      AISO_PATH: this.ingest.pluginDir,
-      AISO_OPENCODE: this.ingest.opencodePlugin,
+      CLANKER_SESSION: id,
+      CLANKER_INGEST: this.ingest.url,
+      CLANKER_TOKEN: this.ingest.token,
+      CLANKER_PATH: this.ingest.pluginDir,
+      CLANKER_OPENCODE: this.ingest.opencodePlugin,
     };
     this.terminals.set(
       id,
