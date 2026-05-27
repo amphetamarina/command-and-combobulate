@@ -1,123 +1,110 @@
 # Architecture
 
-AIso is split so the backend ingests agent activity and owns the terminals,
-and the frontend only draws. The map is **event-driven**: agents report their
-tool calls to the server, which turns them into islands and robots. (The repo
-is still named `isotop`.)
+Command & Clanker is two pieces: a Node **backend** that ingests agent activity and
+owns the real terminals, and an **OpenRA mod** that renders that activity inside the
+OpenRA engine. The world is event-driven — agents report their tool calls; nothing
+scrapes `/proc`.
 
 ```
-   Agent (Claude Code, opencode) running in an AIso terminal
-            |  adapter posts tool calls / lifecycle events
+   Agent (Claude Code, opencode, …) in a Command & Clanker terminal
+            |  adapter POSTs tool calls / lifecycle events
             v
-   Node server (backend)
-     - POST /ingest: normalize agent events -> agents + folder islands
-     - world builder: terminal islands + folder islands (no buildings)
-     - TerminalManager: real PTYs via node-pty; injects AISO_* into the shell
+   Node backend (server/)
+     - POST /ingest: normalize agent events -> agents + folder regions
+     - world builder: terminal + folder regions (a directory forest)
+     - TerminalManager: real PTYs via node-pty; injects CLANKER_* into the shell;
+       a headless xterm resolves each PTY into a screen grid
             |
-   WebSocket (agent snapshots + world deltas)  +  terminal I/O
+   WebSocket: /live (agents + world deltas + files) and /termview (screen grids)
             v
-   Browser (Vite + Phaser 3)
-     - isometric scene: terminal & folder islands, robot NPCs, cables
-     - sidebar: logo, terminal tabs, docked terminal
-     - camera / input
+   OpenRA mod (command-and-clanker/)
+     - ClankerBridge (world trait): connect on a background thread, apply deltas
+       on the game thread -> terminal buildings, folder walls, file ore,
+       agent units, fog
+     - ClankerTerminalWidget: a live, interactive terminal panel
+     - Start menu: "Start Clanking" boots straight into the canvas map
 ```
-
-The backend runs under Node 22 with `--experimental-strip-types` (so it
-executes the `.ts` sources directly); the test suite runs under the Bun test
-runner. Shared modules avoid runtime-specific APIs so they work in both.
 
 ## How an agent reaches the map
 
-When you build a terminal, `TerminalManager` spawns the shell with
-`AISO_SESSION` (the terminal island id), `AISO_INGEST` (the ingest URL), and
-`AISO_TOKEN` in its environment. An agent launched in that shell runs an AIso
-adapter (see `integrations/`) that POSTs each tool call to `/ingest`,
-authorized by the token and tagged with the session via the `X-Aiso-Session`
-header. The server never scrapes `/proc`; it only knows what agents report.
+Building a Terminal spawns a shell with `CLANKER_SESSION` (the terminal id),
+`CLANKER_INGEST` (the ingest URL), and `CLANKER_TOKEN`. An agent launched there runs
+a Command & Clanker adapter (see `integrations/`) that POSTs each tool call to
+`/ingest`, authorized by the token and tagged with the session via
+`X-Clanker-Session` (and the tool via `X-Clanker-Tool`).
 
 ## Backend (Node)
 
-- **Ingest** (`server/index.ts`): `POST /ingest` normalizes a Claude Code hook
-  payload into agent/world state. `SessionStart`/`SessionEnd` add and drop an
-  agent per terminal; `SubagentStart`/`SubagentStop` add and drop child
-  robots; `PostToolUse` with a `tool_input.file_path` points the agent's robot
-  at that file's folder (read vs write) and registers the folder island. The
-  endpoint acks immediately — Claude's HTTP hooks are synchronous and must not
-  block the agent.
+Runs under Node 22 with `--experimental-strip-types` (executes `.ts` directly);
+tests run under Bun.
+
+- **Ingest** (`server/index.ts`): normalizes a hook payload into agent/world
+  state. `SessionStart`/`SessionEnd` add and drop an agent per terminal;
+  `SubagentStart`/`SubagentStop` add and drop child agents; `PostToolUse` with a
+  `file_path` points the agent at that file's folder (read vs write), and Bash at
+  the shell's cwd (run). Acks immediately — hooks are synchronous.
 - **World builder** (`server/world-builder.ts`): a pure function of the live
-  terminals and the folders agents are touching (no I/O during build). Each
-  terminal and each work folder becomes a square island, placed on a meta-grid
-  via a fixed shell slot-mapping so the layout stays square and gap-free. A
-  `PlacementCache` keeps positions stable and reclaims slots when a terminal
-  closes or a folder goes idle.
-- **TerminalManager** (`server/terminals.ts`): spawns a real PTY per session
-  with `node-pty`, injects the `AISO_*` env, buffers recent output, and bridges
-  it to WebSocket clients. Because it is a true PTY it has a real window size
-  and can be resized live, so full-screen TUIs (Claude Code, opencode) reflow
-  to the terminal's actual width.
+  terminals and touched folders, producing terminal regions and a nested folder
+  forest. A `PlacementCache` (`server/persistence.ts`, `.clanker-cache.json`)
+  keeps positions stable across restarts.
+- **TerminalManager** (`server/terminals.ts`): a real PTY per session via
+  node-pty, with a headless `@xterm/headless` emulator that resolves the PTY's
+  cursor moves into a stable screen grid for clients that cannot run a VT parser.
 
-### HTTP / WebSocket surface (`server/index.ts`)
+### HTTP / WebSocket surface
 
-- `POST /ingest` — agent events (token in `Authorization`, terminal id in
-  `X-Aiso-Session`). Acks instantly.
-- `GET /world` — one-shot world snapshot (the island regions).
-- `POST /term/new` (optional `{cols, rows}`), `POST /term/kill`, `WS /term?id=`
-  — terminal lifecycle and I/O. Over the WS the client sends `{i: input}` for
-  keystrokes and `{r: [cols, rows]}` to resize the PTY; the server sends raw
-  shell output back.
-- `WS /live` — pushes `agents` (the current robots, with their activity) and
-  `world-delta` (the current islands) on each tick and when state changes.
+- `POST /ingest` — agent events (token in `Authorization`, ids in `X-Clanker-*`).
+- `GET /world` — one-shot world snapshot.
+- `POST /term/new`, `POST /term/kill` — terminal lifecycle.
+- `WS /term?id=` — raw PTY byte stream (`{i}` input, `{r:[c,r]}` resize).
+- `WS /termview?id=` — resolved screen-grid frames (`term-grid`), same input/resize.
+- `POST /agent/freeze|unfreeze|interrupt|ask` — drive the agent's process.
+- `WS /live` — `agents`, `world-delta`, and `files` on each tick and on change.
 
-## Frontend (Phaser 3 + Vite)
+## OpenRA mod (command-and-clanker/)
 
-- **CityScene** (`src/scene.ts`) owns the isometric scene and consumes the
-  WebSocket. `iso.ts` is the projection; `ground.ts` draws the islands
-  (beveled rose panels with a grid), the animated terminal at a terminal
-  island's centre, and the cables; `npc.ts` picks each robot from the agent's
-  tool and homes it inside its terminal island; `sidebar.ts` is the HUD;
-  `terminals.ts` drives the docked xterm.js panes and keeps the PTY sized to
-  the sidebar.
-- A robot is created per `agents` entry, homed on its terminal island
-  (subagents render smaller). On a new `activity` it walks to that folder
-  island, plays a read/write beat, and returns; cables from a terminal to its
-  active folders are redrawn from the live `agents` stream.
+Built on the OpenRA Mod SDK: `make` fetches the pinned engine (`mod.config`
+`ENGINE_VERSION`) and builds `OpenRA.Mods.Clanker` against it.
 
-## Determinism
+- **ClankerBridge** (`Traits/ClankerBridge.cs`, on the World actor): runs the
+  `/live` WebSocket on a background thread that only enqueues messages; all
+  World/Actor/resource changes happen on the game thread via `AddFrameEndTask`.
+  It turns regions into terminal buildings and folder walls (laid out as a stable
+  indented tree), files into fog-hidden ore, and agents into units that drive to
+  the folder they are working in. It also consumes `/termview` and forwards
+  keystrokes back to the PTY.
+- **ClankerTerminalWidget** (`Widgets/`): paints the screen grid in a monospace
+  font and routes keystrokes to the selected terminal — a live, interactive
+  terminal inside the game.
+- **Mod files** (`mods/clanker/`): rules, sequences, chrome, fluent, and the
+  `clanker-canvas` sandbox map; reuses OpenRA's Red Alert art.
 
-Island layout is deterministic: positions come from the `PlacementCache` slot
-assignment (not randomness), and work-island tint is `seedrandom(folder_path)`
-while terminal islands share one tint. The cache is persisted to
-`.isotop-cache.json` (`server/persistence.ts`), so islands stay put across
-restarts.
-
-## Data shapes
+## Wire shapes
 
 ```ts
 type Region = {
   path: string;            // a folder path, or a terminal id like "t1"
   kind: "terminal" | "work";
-  label: string;           // shell cwd for terminals, folder path for work
+  label: string;
   origin: { x: number; y: number };
   size: { w: number; h: number };
-  tint: number;
+  // folder regions also carry level / fileArea for tree layout
 };
 
 type AgentSnapshot = {
-  id: string;              // "t1" for the agent, "t1:sub:<id>" for a subagent
-  terminal: string | null; // the terminal island it lives on
+  id: string;              // "t1", or "t1:sub:<id>" for a subagent
+  terminal: string | null;
   kind: "agent" | "subagent";
   parent: string | null;
-  tool: string;            // robot art source: "claude" | "opencode" | ...
+  tool: string;            // unit per tool: "claude" | "opencode" | ...
   label: string;
-  activity: { path: string; dir: string; direction: "read" | "write" } | null;
+  activity: { path: string; dir: string; direction: "read" | "write" | "run" } | null;
 };
 ```
 
-## Not yet decided / deferred
+## Determinism
 
-- **opencode adapter**: the same `/ingest` contract, fed by an opencode plugin
-  (`tool.execute.before/after` + `event`). Claude Code is wired first.
-- **Installer**: an `aiso install` that registers the adapter and templates the
-  ingest URL/port, plus marketplace/npm distribution.
-- **Action vocabulary**: richer beats for bash/search/spawn and per-tool
-  animations beyond read/write.
+Folder and terminal positions are deterministic: the backend's `PlacementCache`
+assigns stable slots (persisted to `.clanker-cache.json`), and the mod lays
+folders out as a stable indented tree keyed by recycled rows, so the map does not
+reshuffle as folders come and go.

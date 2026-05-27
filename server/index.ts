@@ -21,8 +21,8 @@ const ACTIVITY_TTL_MS = 6000;
 const FILES_PER_DIR = 24;
 const FILE_MAX_BYTES = 256 * 1024;
 const CACHE_PATH =
-  process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
-const INGEST_TOKEN = process.env.AISO_TOKEN ?? randomUUID();
+  process.env.CLANKER_CACHE ?? join(process.cwd(), ".clanker-cache.json");
+const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
 const workDirLastActive = new Map<string, number>();
@@ -32,12 +32,12 @@ const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 let worldDirty = false;
 
-// Absolute paths to the adapters, injected as AISO_PATH (Claude plugin dir,
-// used as `claude --plugin-dir $AISO_PATH`) and AISO_OPENCODE (the opencode
+// Absolute paths to the adapters, injected as CLANKER_PATH (Claude plugin dir,
+// used as `claude --plugin-dir $CLANKER_PATH`) and CLANKER_OPENCODE (the opencode
 // plugin file).
 const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
-const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "aiso");
-const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "aiso", "aiso.js");
+const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "clanker");
+const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "clanker", "clanker.js");
 
 const terminals = new TerminalManager({
   url: `http://127.0.0.1:${PORT}/ingest`,
@@ -154,7 +154,7 @@ function isTrackedFile(path: string): boolean {
 }
 
 // Normalize a Claude Code hook payload into agent/world state. The terminal
-// island id arrives out of band in the X-Aiso-Session header.
+// island id arrives out of band in the X-Clanker-Session header.
 type ClaudeHook = {
   hook_event_name?: string;
   tool_name?: string;
@@ -319,8 +319,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (req.headers["authorization"] !== `Bearer ${INGEST_TOKEN}`) {
       return sendJson(res, 401, { ok: false });
     }
-    const session = String(req.headers["x-aiso-session"] ?? "");
-    const tool = String(req.headers["x-aiso-tool"] ?? "claude");
+    const session = String(req.headers["x-clanker-session"] ?? "");
+    const tool = String(req.headers["x-clanker-tool"] ?? "claude");
     let body: ClaudeHook = {};
     try {
       body = (await readBody(req)) as ClaudeHook;
@@ -379,6 +379,34 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     } catch {
       return sendJson(res, 400, { ok: false });
     }
+  }
+
+  if (pathname === "/agent/freeze" && method === "POST") {
+    const { terminal } = (await readBody(req)) as { terminal?: unknown };
+    terminals.freeze(String(terminal));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === "/agent/unfreeze" && method === "POST") {
+    const { terminal } = (await readBody(req)) as { terminal?: unknown };
+    terminals.unfreeze(String(terminal));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === "/agent/interrupt" && method === "POST") {
+    const { terminal } = (await readBody(req)) as { terminal?: unknown };
+    terminals.interrupt(String(terminal));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === "/agent/ask" && method === "POST") {
+    const { terminal, text } = (await readBody(req)) as {
+      terminal?: unknown;
+      text?: unknown;
+    };
+    // Append a carriage return so the injected message submits in the agent's TUI.
+    terminals.ask(String(terminal), `${String(text)}\r`);
+    return sendJson(res, 200, { ok: true });
   }
 
   if (pathname === "/world") {
@@ -457,6 +485,38 @@ httpServer.on("upgrade", (req, socket, head) => {
         else if (Array.isArray(msg?.r)) term.resize(msg.r[0], msg.r[1]);
       });
       ws.on("close", () => term.detach(client));
+    });
+    return;
+  }
+  if (url.pathname === "/termview") {
+    // Like /term, but serves the emulator's resolved screen grid (JSON frames)
+    // instead of raw PTY bytes, for clients that cannot run a VT parser.
+    const id = url.searchParams.get("id") ?? "";
+    const term = terminals.get(id);
+    if (!term) {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const client: TermClient = {
+        send: (data) => {
+          if (ws.readyState === ws.OPEN) ws.send(data);
+        },
+      };
+      term.attachView(client);
+      ws.on("message", (raw) => {
+        const text = raw.toString();
+        let msg: { i?: string; r?: [number, number] } | null = null;
+        try {
+          msg = JSON.parse(text);
+        } catch {
+          term.write(text);
+          return;
+        }
+        if (typeof msg?.i === "string") term.write(msg.i);
+        else if (Array.isArray(msg?.r)) term.resize(msg.r[0], msg.r[1]);
+      });
+      ws.on("close", () => term.detachView(client));
     });
     return;
   }

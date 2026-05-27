@@ -1,25 +1,19 @@
 {
-  "name": "isotop",
+  "name": "command-and-clanker",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/dev.ts",
-    "dev:server": "node --experimental-strip-types --disable-warning=ExperimentalWarning --watch server/index.ts",
-    "dev:client": "vite",
+    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning --watch server/index.ts",
     "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts",
     "setup": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/install.ts",
-    "build": "vite build",
-    "preview": "vite preview",
+    "game": "cd command-and-clanker && make && ./launch-game.sh",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@fontsource/jetbrains-mono": "^5.2.8",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
+    "@xterm/headless": "^6.0.0",
     "node-pty": "^1.1.0",
-    "phaser": "^3.80.0",
     "seedrandom": "^3.0.5",
     "ws": "^8.18.0"
   },
@@ -28,8 +22,7 @@
     "@types/seedrandom": "^3.0.8",
     "@types/ws": "^8.5.13",
     "node-gyp": "^11.0.0",
-    "typescript": "^5.5.0",
-    "vite": "^5.4.0"
+    "typescript": "^5.5.0"
   },
   "trustedDependencies": ["node-pty"]
 }

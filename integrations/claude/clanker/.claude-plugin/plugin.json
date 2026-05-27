@@ -1,0 +1,6 @@
+{
+  "name": "clanker",
+  "description": "Stream Claude Code tool calls and subagent activity to the Command & Clanker map.",
+  "version": "0.1.0",
+  "author": { "name": "Command & Clanker" }
+}

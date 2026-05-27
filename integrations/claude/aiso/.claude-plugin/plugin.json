@@ -1,6 +1,0 @@
-{
-  "name": "aiso",
-  "description": "Stream Claude Code tool calls and subagent activity to the AIso map.",
-  "version": "0.1.0",
-  "author": { "name": "AIso" }
-}

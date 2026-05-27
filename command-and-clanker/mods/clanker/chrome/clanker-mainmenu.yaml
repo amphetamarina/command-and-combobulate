@@ -1,0 +1,33 @@
+Container@CLANKER_MAINMENU:
+	Logic: ClankerMenuLogic
+	Width: WINDOW_WIDTH
+	Height: WINDOW_HEIGHT
+	Children:
+		Background@PANEL:
+			X: (WINDOW_WIDTH - WIDTH) / 2
+			Y: (WINDOW_HEIGHT - HEIGHT) / 2
+			Width: 380
+			Height: 220
+			Background: dialog
+			Children:
+				Label@TITLE:
+					X: 0
+					Y: 26
+					Width: PARENT_WIDTH
+					Height: 30
+					Font: BigBold
+					Align: Center
+					Text: clanker-mod-title
+				Button@LAUNCH:
+					X: (PARENT_WIDTH - WIDTH) / 2
+					Y: 96
+					Width: 280
+					Height: 44
+					Font: Bold
+					Text: button-clanker-launch
+				Button@QUIT:
+					X: (PARENT_WIDTH - WIDTH) / 2
+					Y: 152
+					Width: 280
+					Height: 34
+					Text: button-clanker-quit

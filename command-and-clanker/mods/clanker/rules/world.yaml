@@ -1,0 +1,5 @@
+World:
+	ClankerBridge:
+	ClankerSidebarLoader:
+	LoadWidgetAtGameStart:
+		ShellmapRoot: CLANKER_MAINMENU

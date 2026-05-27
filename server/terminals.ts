@@ -1,4 +1,5 @@
 import * as pty from "node-pty";
+import xterm from "@xterm/headless";
 
 const OUTPUT_BUFFER_CAP = 16384;
 const DEFAULT_COLS = 80;
@@ -6,12 +7,44 @@ const DEFAULT_ROWS = 24;
 
 export type TermClient = { send: (data: string) => void };
 
+type HeadlessTerm = InstanceType<typeof xterm.Terminal>;
+
+export type TermGrid = {
+  cols: number;
+  rows: number;
+  cursorX: number;
+  cursorY: number;
+  lines: string[];
+};
+
+// Read the emulator's visible screen as plain-text rows plus the cursor
+// position, so a non-DOM client (OpenRA) can paint a faithful terminal
+// without reimplementing a VT parser.
+export function readGrid(view: HeadlessTerm): TermGrid {
+  const buf = view.buffer.active;
+  const lines: string[] = [];
+  for (let y = 0; y < view.rows; y++) {
+    const line = buf.getLine(buf.viewportY + y);
+    lines.push(line ? line.translateToString(true) : "");
+  }
+  return {
+    cols: view.cols,
+    rows: view.rows,
+    cursorX: buf.cursorX,
+    cursorY: buf.cursorY,
+    lines,
+  };
+}
+
 class Terminal {
   readonly id: string;
   readonly pid: number;
   private proc: pty.IPty;
   private buffer = "";
   private clients = new Set<TermClient>();
+  private view: HeadlessTerm;
+  private viewClients = new Set<TermClient>();
+  private pushTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     id: string,
@@ -30,9 +63,19 @@ class Terminal {
       env: { ...(process.env as Record<string, string>), ...extraEnv },
     });
     this.pid = this.proc.pid;
+    // A headless emulator resolves the PTY's cursor moves and redraws into a
+    // stable screen grid; raw-byte clients still get the unmodified stream.
+    this.view = new xterm.Terminal({
+      cols,
+      rows,
+      scrollback: 2000,
+      allowProposedApi: true,
+    });
     this.proc.onData((data) => {
       this.buffer = (this.buffer + data).slice(-OUTPUT_BUFFER_CAP);
+      this.view.write(data);
       for (const client of this.clients) client.send(data);
+      this.scheduleViewPush();
     });
     this.proc.onExit(() => onExit());
   }
@@ -46,20 +89,67 @@ class Terminal {
     this.clients.delete(client);
   }
 
+  attachView(client: TermClient) {
+    this.viewClients.add(client);
+    client.send(this.gridMessage());
+  }
+
+  detachView(client: TermClient) {
+    this.viewClients.delete(client);
+  }
+
+  // Coalesce bursts of PTY output into at most one grid frame per ~40ms so a
+  // redraw-heavy TUI does not flood the view clients.
+  private scheduleViewPush() {
+    if (this.pushTimer || this.viewClients.size === 0) return;
+    this.pushTimer = setTimeout(() => {
+      this.pushTimer = null;
+      const msg = this.gridMessage();
+      for (const client of this.viewClients) client.send(msg);
+    }, 40);
+  }
+
+  private gridMessage(): string {
+    return JSON.stringify({ kind: "term-grid", ...readGrid(this.view) });
+  }
+
   write(data: string) {
     this.proc.write(data);
   }
 
   resize(cols: number, rows: number) {
-    if (cols > 0 && rows > 0) this.proc.resize(cols, rows);
+    if (cols > 0 && rows > 0) {
+      this.proc.resize(cols, rows);
+      this.view.resize(cols, rows);
+    }
   }
 
   kill() {
+    if (this.pushTimer) {
+      clearTimeout(this.pushTimer);
+      this.pushTimer = null;
+    }
     try {
       this.proc.kill();
     } catch {
       // already gone
     }
+  }
+
+  signal(sig: string) {
+    try {
+      this.proc.kill(sig);
+    } catch {
+      // already gone
+    }
+  }
+
+  interrupt() {
+    this.write("\x03");
+  }
+
+  inject(text: string) {
+    this.write(text);
   }
 }
 
@@ -84,11 +174,11 @@ export class TerminalManager {
     // The agent's adapter reads these to tag its events with this island and
     // reach the ingest endpoint.
     const env = {
-      AISO_SESSION: id,
-      AISO_INGEST: this.ingest.url,
-      AISO_TOKEN: this.ingest.token,
-      AISO_PATH: this.ingest.pluginDir,
-      AISO_OPENCODE: this.ingest.opencodePlugin,
+      CLANKER_SESSION: id,
+      CLANKER_INGEST: this.ingest.url,
+      CLANKER_TOKEN: this.ingest.token,
+      CLANKER_PATH: this.ingest.pluginDir,
+      CLANKER_OPENCODE: this.ingest.opencodePlugin,
     };
     this.terminals.set(
       id,
@@ -116,5 +206,21 @@ export class TerminalManager {
   kill(id: string) {
     this.terminals.get(id)?.kill();
     this.terminals.delete(id);
+  }
+
+  freeze(id: string) {
+    this.terminals.get(id)?.signal("SIGSTOP");
+  }
+
+  unfreeze(id: string) {
+    this.terminals.get(id)?.signal("SIGCONT");
+  }
+
+  interrupt(id: string) {
+    this.terminals.get(id)?.interrupt();
+  }
+
+  ask(id: string, text: string) {
+    this.terminals.get(id)?.inject(text);
   }
 }
