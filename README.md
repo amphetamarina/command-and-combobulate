@@ -1,7 +1,9 @@
 # Command & Clanker
+<img width="512" height="256" alt="clanker-loadscreen" src="https://github.com/user-attachments/assets/61281ddd-34d0-4cf6-9692-9d8deeaeb24f" />
 
-`top`, but as a real-time strategy game. Run an AI agent (Claude Code, opencode, …)
-inside a terminal you build in-game and watch it play out on an OpenRA map: every
+
+
+Run an AI agent inside a terminal you build in-game and watch it play out on an OpenRA map: every
 file it reads or writes, every command it runs, and every subagent it spawns shows
 up as units, buildings, and resources you scout through fog of war.
 
