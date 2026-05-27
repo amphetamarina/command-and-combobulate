@@ -19,7 +19,7 @@ scrapes `/proc`.
             v
    OpenRA mod (command-and-clanker/)
      - ClankerBridge (world trait): connect on a background thread, apply deltas
-       on the game thread -> terminal buildings, folder walls, file ore,
+       on the game thread -> terminal buildings, folder walls, file buildings,
        agent units, fog
      - ClankerTerminalWidget: a live, interactive terminal panel
      - Start menu: "Start Clanking" boots straight into the canvas map
@@ -70,7 +70,7 @@ Built on the OpenRA Mod SDK: `make` fetches the pinned engine (`mod.config`
   `/live` WebSocket on a background thread that only enqueues messages; all
   World/Actor/resource changes happen on the game thread via `AddFrameEndTask`.
   It turns regions into terminal buildings and folder walls (laid out as a stable
-  indented tree), files into fog-hidden ore, and agents into units that drive to
+  nested compounds), files into fog-hidden civilian buildings, and agents into units that drive to
   the folder they are working in. It also consumes `/termview` and forwards
   keystrokes back to the PTY.
 - **ClankerTerminalWidget** (`Widgets/`): paints the screen grid in a monospace

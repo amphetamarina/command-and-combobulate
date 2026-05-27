@@ -62,7 +62,8 @@ everywhere else.
   folder it is touching and showing read / write / run.
 - **Folders** — walled compounds laid out as a directory tree, cabled to the
   terminal working in them.
-- **Files** — ore stacked inside a folder, one patch per file.
+- **Files** — small civilian buildings inside a folder, one per file (the
+  building varies by file type).
 - **Fog of war** — the world is hidden until your commander scouts it.
 
 ## Layout

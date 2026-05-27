@@ -40,11 +40,10 @@ namespace OpenRA.Mods.Clanker.Traits
 		[Desc("Wall actor for a folder's top-left corner; it carries the folder name label.")]
 		public readonly string FolderLabelWall = "clanker.folderwall";
 
-		[Desc("Resource type placed inside a folder for each file an agent touches.")]
-		public readonly string ResourceType = "Ore";
-
-		[Desc("Resource density added per touched file.")]
-		public readonly byte ResourceDensity = 5;
+		[ActorReference]
+		[Desc("Civilian building actors placed inside a folder, one per file an agent",
+			"touches; the variant is chosen by file extension so similar files match.")]
+		public readonly string[] FileActors = { "v05", "v06", "v07" };
 
 		[ActorReference]
 		[Desc("Unit spawned for each agent (Claude / default), homed on its terminal island.")]
@@ -85,7 +84,7 @@ namespace OpenRA.Mods.Clanker.Traits
 		readonly Dictionary<string, ClankerTerminalRef> islandRefs = new();
 		readonly Dictionary<string, List<Actor>> folderWalls = new();
 		readonly Dictionary<string, Region> folderRegions = new();
-		readonly Dictionary<string, Dictionary<string, CPos>> placedFiles = new();
+		readonly Dictionary<string, Dictionary<string, Actor>> placedFiles = new();
 		readonly Dictionary<string, Actor> agents = new();
 		readonly Dictionary<string, CPos> agentHome = new();
 		readonly Dictionary<string, CPos> agentTarget = new();
@@ -106,7 +105,6 @@ namespace OpenRA.Mods.Clanker.Traits
 
 		World world;
 		Player owner;
-		IResourceLayer resources;
 		MapCoords coords;
 		CancellationTokenSource cts;
 
@@ -119,7 +117,6 @@ namespace OpenRA.Mods.Clanker.Traits
 		{
 			world = w;
 			owner = FindOwner(w);
-			resources = w.WorldActor.TraitOrDefault<IResourceLayer>();
 			ClankerBackend.BaseUrl = info.HttpUrl;
 
 			var bounds = w.Map.Bounds;
@@ -347,11 +344,13 @@ namespace OpenRA.Mods.Clanker.Traits
 			};
 		}
 
-		// Places one ore deposit per touched file inside the folder's file strip,
-		// at a stable hashed cell, and removes deposits for files that are gone.
+		// Places one civilian building per touched file inside the folder's file
+		// strip (the variant is chosen by file extension), and removes buildings for
+		// files that are gone. A hashed slot with linear probing keeps each file put
+		// and stops two buildings landing on the same footprint.
 		void ApplyFiles(World w, List<FolderFiles> files)
 		{
-			if (resources == null)
+			if (info.FileActors.Length == 0)
 				return;
 
 			foreach (var folder in files)
@@ -359,15 +358,20 @@ namespace OpenRA.Mods.Clanker.Traits
 				if (folder.Entries == null || !folderRegions.TryGetValue(folder.Dir, out var region))
 					continue;
 
-				var cells = FileAreaCells(w, region);
+				var cells = FileSlotCells(w, region);
 				if (cells.Count == 0)
 					continue;
 
 				if (!placedFiles.TryGetValue(folder.Dir, out var placed))
 				{
-					placed = new Dictionary<string, CPos>();
+					placed = new Dictionary<string, Actor>();
 					placedFiles[folder.Dir] = placed;
 				}
+
+				var occupied = new HashSet<CPos>();
+				foreach (var a in placed.Values)
+					if (a.IsInWorld)
+						occupied.Add(a.Location);
 
 				var current = new HashSet<string>();
 				foreach (var entry in folder.Entries)
@@ -376,12 +380,28 @@ namespace OpenRA.Mods.Clanker.Traits
 					if (placed.ContainsKey(entry.Path))
 						continue;
 
-					// Place directly rather than via CanAddResource: that gate enforces
-					// RA's harvester terrain rules (Clear/Road only), but here ore is
-					// just a marker for a touched file and should show on any ground.
-					var cell = cells[SlotFor(entry.Path, cells.Count)];
-					resources.AddResource(info.ResourceType, cell, info.ResourceDensity);
-					placed[entry.Path] = cell;
+					var start = SlotFor(entry.Path, cells.Count);
+					var chosen = -1;
+					for (var i = 0; i < cells.Count; i++)
+					{
+						var idx = (start + i) % cells.Count;
+						if (!occupied.Contains(cells[idx]))
+						{
+							chosen = idx;
+							break;
+						}
+					}
+
+					if (chosen < 0)
+						continue; // the file strip is full
+
+					occupied.Add(cells[chosen]);
+					var actorName = info.FileActors[SlotFor(Extension(entry.Name ?? entry.Path), info.FileActors.Length)];
+					placed[entry.Path] = w.CreateActor(actorName,
+					[
+						new LocationInit(cells[chosen]),
+						new OwnerInit(owner),
+					]);
 				}
 
 				var gone = new List<string>();
@@ -391,27 +411,42 @@ namespace OpenRA.Mods.Clanker.Traits
 
 				foreach (var path in gone)
 				{
-					resources.RemoveResource(info.ResourceType, placed[path], info.ResourceDensity);
+					if (placed[path].IsInWorld)
+						placed[path].Dispose();
+
 					placed.Remove(path);
 				}
 			}
 		}
 
-		// The cells of a folder's server-reserved file strip, where file ore stacks.
-		List<CPos> FileAreaCells(World w, Region region)
+		// The placement slots in a folder's server-reserved file strip. Columns are
+		// stepped by two so the two-wide house sprites do not overlap.
+		List<CPos> FileSlotCells(World w, Region region)
 		{
 			var list = new List<CPos>();
 			if (region.FileArea == null)
 				return list;
 
-			foreach (var (x, y) in coords.FileAreaCells(region.FileArea))
-			{
-				var cell = new CPos(x, y);
-				if (w.Map.Contains(cell))
-					list.Add(cell);
-			}
+			var area = region.FileArea;
+			for (var row = 0; row < area.Rows; row++)
+				for (var col = 0; col < area.Cols; col += 2)
+				{
+					var (x, y) = coords.ToCell(area.X + col, area.Y + row);
+					var cell = new CPos(x, y);
+					if (w.Map.Contains(cell))
+						list.Add(cell);
+				}
 
 			return list;
+		}
+
+		// File extension (lowercased, no dot) used to pick a building variant, or
+		// "" when there is none, so files of the same type share a building.
+		static string Extension(string nameOrPath)
+		{
+			var name = Basename(nameOrPath);
+			var dot = name.LastIndexOf('.');
+			return dot > 0 ? name[(dot + 1)..].ToLowerInvariant() : "";
 		}
 
 		static int SlotFor(string path, int count)
@@ -551,9 +586,9 @@ namespace OpenRA.Mods.Clanker.Traits
 
 				if (placedFiles.TryGetValue(path, out var placed))
 				{
-					if (resources != null)
-						foreach (var cell in placed.Values)
-							resources.ClearResources(cell);
+					foreach (var building in placed.Values)
+						if (building.IsInWorld)
+							building.Dispose();
 
 					placedFiles.Remove(path);
 				}
