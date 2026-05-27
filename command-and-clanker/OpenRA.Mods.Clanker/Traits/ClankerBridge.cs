@@ -93,19 +93,6 @@ namespace OpenRA.Mods.Clanker.Traits
 		readonly Dictionary<string, string> activeLinks = new();
 		IReadOnlyList<(WPos Start, WPos End, Color Color)> connectors = new List<(WPos, WPos, Color)>();
 
-		// Stable indented-tree layout for folders: each folder keeps a recycled row,
-		// and its x-indent comes from its depth in the touched-folder forest, so the
-		// set reads as a hierarchy and does not reshuffle as folders come and go.
-		const int FolderW = 6;
-		const int FolderH = 5;
-		const int IndentX = 8;
-		const int RowStride = 7;
-		readonly Dictionary<string, CPos> folderOrigins = new();
-		readonly Dictionary<string, int> folderRows = new();
-		readonly List<int> freeFolderRows = new();
-		int nextFolderRow;
-		CPos layoutBase;
-
 		CancellationTokenSource termCts;
 		string streamedId;
 		volatile ClankerTermGrid termGrid;
@@ -137,12 +124,6 @@ namespace OpenRA.Mods.Clanker.Traits
 
 			var bounds = w.Map.Bounds;
 			coords = new MapCoords(bounds.Left + (bounds.Width / 2), bounds.Top + (bounds.Height / 2));
-			// Anchor the folder tree just left of the terminal cluster at map center
-			// so agents (which spawn next to their terminal) can path to it instead
-			// of trekking across the whole map to a far corner.
-			layoutBase = new CPos(
-				bounds.Left + (bounds.Width / 2) - 44,
-				bounds.Top + (bounds.Height / 2) - 8);
 
 			cts = new CancellationTokenSource();
 			Task.Run(() => RunSocketLoop(cts.Token));
@@ -284,13 +265,8 @@ namespace OpenRA.Mods.Clanker.Traits
 					liveFolders.Add(region.Path);
 					if (!folderWalls.ContainsKey(region.Path))
 					{
-						var row = freeFolderRows.Count > 0 ? PopFreeRow() : nextFolderRow++;
-						var depth = FolderDepth(region.Path, regions);
-						var origin = layoutBase + new CVec(depth * IndentX, row * RowStride);
-						folderRows[region.Path] = row;
-						folderOrigins[region.Path] = origin;
 						folderRegions[region.Path] = region;
-						folderWalls[region.Path] = BuildFolderWalls(w, origin, region.Level, Basename(region.Path));
+						folderWalls[region.Path] = BuildFolderWalls(w, region);
 					}
 				}
 			}
@@ -300,21 +276,26 @@ namespace OpenRA.Mods.Clanker.Traits
 			RebuildConnectors(w);
 		}
 
-		// Outlines a folder with wall actors along the perimeter of its fixed box so
-		// it reads as a fenced-off compound at its tree position.
-		List<Actor> BuildFolderWalls(World w, CPos origin, int level, string name)
+		// Outlines a folder region along the perimeter of its server-computed box,
+		// so child folders sit visibly inside their parent and the wall tier rises
+		// with nesting depth.
+		List<Actor> BuildFolderWalls(World w, Region region)
 		{
 			var walls = new List<Actor>();
-			var wall = info.WallActorsByLevel[Math.Min(level, info.WallActorsByLevel.Length - 1)];
+			var (ox, oy) = coords.RegionOrigin(region);
+			var width = region.Size.W;
+			var height = region.Size.H;
+			var wall = info.WallActorsByLevel[Math.Min(region.Level, info.WallActorsByLevel.Length - 1)];
+			var name = Basename(region.Path);
 
-			for (var dy = 0; dy < FolderH; dy++)
+			for (var dy = 0; dy < height; dy++)
 			{
-				for (var dx = 0; dx < FolderW; dx++)
+				for (var dx = 0; dx < width; dx++)
 				{
-					if (dx != 0 && dy != 0 && dx != FolderW - 1 && dy != FolderH - 1)
+					if (dx != 0 && dy != 0 && dx != width - 1 && dy != height - 1)
 						continue;
 
-					var cell = origin + new CVec(dx, dy);
+					var cell = new CPos(ox + dx, oy + dy);
 					if (!w.Map.Contains(cell))
 						continue;
 
@@ -375,10 +356,10 @@ namespace OpenRA.Mods.Clanker.Traits
 
 			foreach (var folder in files)
 			{
-				if (folder.Entries == null || !folderOrigins.TryGetValue(folder.Dir, out var origin))
+				if (folder.Entries == null || !folderRegions.TryGetValue(folder.Dir, out var region))
 					continue;
 
-				var cells = FolderFileCells(w, origin);
+				var cells = FileAreaCells(w, region);
 				if (cells.Count == 0)
 					continue;
 
@@ -416,17 +397,19 @@ namespace OpenRA.Mods.Clanker.Traits
 			}
 		}
 
-		// The interior cells of a folder box, where file ore is stacked.
-		List<CPos> FolderFileCells(World w, CPos origin)
+		// The cells of a folder's server-reserved file strip, where file ore stacks.
+		List<CPos> FileAreaCells(World w, Region region)
 		{
 			var list = new List<CPos>();
-			for (var dy = 1; dy < FolderH - 1; dy++)
-				for (var dx = 1; dx < FolderW - 1; dx++)
-				{
-					var cell = origin + new CVec(dx, dy);
-					if (w.Map.Contains(cell))
-						list.Add(cell);
-				}
+			if (region.FileArea == null)
+				return list;
+
+			foreach (var (x, y) in coords.FileAreaCells(region.FileArea))
+			{
+				var cell = new CPos(x, y);
+				if (w.Map.Contains(cell))
+					list.Add(cell);
+			}
 
 			return list;
 		}
@@ -491,12 +474,13 @@ namespace OpenRA.Mods.Clanker.Traits
 					continue;
 
 				var target = agentHome[snap.Id];
-				if (snap.Activity != null && folderOrigins.TryGetValue(snap.Activity.Dir, out var folderOrigin))
+				if (snap.Activity != null && folderRegions.TryGetValue(snap.Activity.Dir, out var region))
 				{
 					// Park just outside the folder's west wall: the interior is sealed by
 					// the perimeter walls, so the unit approaches the folder rather than
 					// trying to path into a blocked cell.
-					var folderTarget = folderOrigin + new CVec(-1, FolderH / 2);
+					var (fx, fy) = coords.RegionOrigin(region);
+					var folderTarget = new CPos(fx - 1, fy + (region.Size.H / 2));
 					if (w.Map.Contains(folderTarget))
 						target = folderTarget;
 				}
@@ -574,15 +558,8 @@ namespace OpenRA.Mods.Clanker.Traits
 					placedFiles.Remove(path);
 				}
 
-				if (folderRows.TryGetValue(path, out var freedRow))
-				{
-					freeFolderRows.Add(freedRow);
-					folderRows.Remove(path);
-				}
-
 				folderWalls.Remove(path);
 				folderRegions.Remove(path);
-				folderOrigins.Remove(path);
 			}
 		}
 
@@ -591,19 +568,19 @@ namespace OpenRA.Mods.Clanker.Traits
 			var list = new List<(WPos, WPos, Color)>();
 
 			// Parent -> child folder edges (the directory tree).
-			foreach (var path in folderOrigins.Keys)
+			foreach (var kv in folderRegions)
 			{
-				var parent = ParentOf(path);
-				if (parent != null && folderOrigins.ContainsKey(parent))
-					list.Add((FolderCenter(w, parent), FolderCenter(w, path), Color.Gray));
+				var parent = ParentOf(kv.Key);
+				if (parent != null && folderRegions.TryGetValue(parent, out var pr))
+					list.Add((FolderCenter(w, pr), FolderCenter(w, kv.Value), Color.Gray));
 			}
 
 			// Terminal -> the folder its agent is working in right now.
 			foreach (var kv in activeLinks)
 			{
 				if (islands.TryGetValue(kv.Key, out var island) && island.IsInWorld
-					&& folderOrigins.ContainsKey(kv.Value))
-					list.Add((island.CenterPosition, FolderCenter(w, kv.Value), Color.Cyan));
+					&& folderRegions.TryGetValue(kv.Value, out var fr))
+					list.Add((island.CenterPosition, FolderCenter(w, fr), Color.Cyan));
 			}
 
 			connectors = list;
@@ -612,7 +589,7 @@ namespace OpenRA.Mods.Clanker.Traits
 		string ParentOf(string path)
 		{
 			string best = null;
-			foreach (var other in folderOrigins.Keys)
+			foreach (var other in folderRegions.Keys)
 			{
 				if (other == path || !path.StartsWith(other + "/", StringComparison.Ordinal))
 					continue;
@@ -624,32 +601,10 @@ namespace OpenRA.Mods.Clanker.Traits
 			return best;
 		}
 
-		WPos FolderCenter(World w, string path)
+		WPos FolderCenter(World w, Region region)
 		{
-			if (!folderOrigins.TryGetValue(path, out var origin))
-				return WPos.Zero;
-
-			return w.Map.CenterOfCell(origin + new CVec(FolderW / 2, FolderH / 2));
-		}
-
-		// How many of the touched folders are ancestors of this path; drives the
-		// horizontal indent so deeper folders sit further right.
-		static int FolderDepth(string path, List<Region> regions)
-		{
-			var depth = 0;
-			foreach (var r in regions)
-				if (!r.IsTerminal && r.Path != path
-					&& path.StartsWith(r.Path + "/", StringComparison.Ordinal))
-					depth++;
-
-			return depth;
-		}
-
-		int PopFreeRow()
-		{
-			var row = freeFolderRows[^1];
-			freeFolderRows.RemoveAt(freeFolderRows.Count - 1);
-			return row;
+			var (ox, oy) = coords.RegionOrigin(region);
+			return w.Map.CenterOfCell(new CPos(ox + (region.Size.W / 2), oy + (region.Size.H / 2)));
 		}
 
 		IEnumerable<IRenderable> IRenderAnnotations.RenderAnnotations(Actor self, WorldRenderer wr)
