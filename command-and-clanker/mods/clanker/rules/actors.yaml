@@ -72,3 +72,38 @@ clanker.subagent:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFE066
+
+# One small civilian house per touched file. The label (file name + size) shows
+# only while the house is selected, so the commander clicks one to inspect it.
+clanker.file1:
+	Inherits: V05
+	RenderSprites:
+		Image: v05
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file2:
+	Inherits: V06
+	RenderSprites:
+		Image: v06
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file3:
+	Inherits: V07
+	RenderSprites:
+		Image: v07
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF

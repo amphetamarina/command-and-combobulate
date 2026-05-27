@@ -43,7 +43,7 @@ namespace OpenRA.Mods.Clanker.Traits
 		[ActorReference]
 		[Desc("Civilian building actors placed inside a folder, one per file an agent",
 			"touches; the variant is chosen by file extension so similar files match.")]
-		public readonly string[] FileActors = { "v05", "v06", "v07" };
+		public readonly string[] FileActors = { "clanker.file1", "clanker.file2", "clanker.file3" };
 
 		[ActorReference]
 		[Desc("Unit spawned for each agent (Claude / default), homed on its terminal island.")]
@@ -120,7 +120,9 @@ namespace OpenRA.Mods.Clanker.Traits
 			ClankerBackend.BaseUrl = info.HttpUrl;
 
 			var bounds = w.Map.Bounds;
-			coords = new MapCoords(bounds.Left + (bounds.Width / 2), bounds.Top + (bounds.Height / 2));
+			// Anchor the agent world just south-east of the commander's base (top-left)
+			// so terminals and folders appear near it rather than across the map.
+			coords = new MapCoords(bounds.Left + 31, bounds.Top + 25);
 
 			cts = new CancellationTokenSource();
 			Task.Run(() => RunSocketLoop(cts.Token));
@@ -397,11 +399,15 @@ namespace OpenRA.Mods.Clanker.Traits
 
 					occupied.Add(cells[chosen]);
 					var actorName = info.FileActors[SlotFor(Extension(entry.Name ?? entry.Path), info.FileActors.Length)];
-					placed[entry.Path] = w.CreateActor(actorName,
+					var building = w.CreateActor(actorName,
 					[
 						new LocationInit(cells[chosen]),
 						new OwnerInit(owner),
 					]);
+					var label = building.TraitOrDefault<ClankerLabel>();
+					if (label != null)
+						label.Label = FileLabel(entry);
+					placed[entry.Path] = building;
 				}
 
 				var gone = new List<string>();
@@ -447,6 +453,21 @@ namespace OpenRA.Mods.Clanker.Traits
 			var name = Basename(nameOrPath);
 			var dot = name.LastIndexOf('.');
 			return dot > 0 ? name[(dot + 1)..].ToLowerInvariant() : "";
+		}
+
+		// Shown over a file's house while it is selected: basename and size.
+		static string FileLabel(FileEntry entry)
+		{
+			return $"{Basename(entry.Name ?? entry.Path)} ({FormatSize(entry.Size)})";
+		}
+
+		static string FormatSize(long bytes)
+		{
+			if (bytes < 1024)
+				return $"{bytes} B";
+			if (bytes < 1024 * 1024)
+				return $"{bytes / 1024.0:0.#} KB";
+			return $"{bytes / (1024.0 * 1024.0):0.#} MB";
 		}
 
 		static int SlotFor(string path, int count)
