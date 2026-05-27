@@ -36,8 +36,8 @@ let worldDirty = false;
 // used as `claude --plugin-dir $CLANKER_PATH`) and CLANKER_OPENCODE (the opencode
 // plugin file).
 const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
-const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "aiso");
-const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "aiso", "aiso.js");
+const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "clanker");
+const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "clanker", "clanker.js");
 
 const terminals = new TerminalManager({
   url: `http://127.0.0.1:${PORT}/ingest`,

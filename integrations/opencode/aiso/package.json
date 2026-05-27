@@ -1,9 +1,0 @@
-{
-  "name": "@aiso/opencode-plugin",
-  "version": "0.1.0",
-  "description": "Stream opencode tool calls and subagents to the AIso map.",
-  "type": "module",
-  "main": "aiso.js",
-  "exports": "./aiso.js",
-  "license": "MIT"
-}
