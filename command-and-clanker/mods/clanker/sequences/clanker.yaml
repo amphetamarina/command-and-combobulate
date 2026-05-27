@@ -5,7 +5,7 @@ clankerterminal:
 	# visual tuning pass.
 	idle:
 		Filename: clanker|uibits/terminal-building.png
-		Scale: 0.5
+		Scale: 0.65
 	# Custom, unique build cameo so it does not collide with another building's
 	# icon in the palette.
 	icon:
