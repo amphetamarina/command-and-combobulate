@@ -16,7 +16,7 @@ import type {
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
-const WORK_DIR_TTL_MS = 45000;
+const WORK_DIR_TTL_MS = 600000;
 const ACTIVITY_TTL_MS = 6000;
 const FILES_PER_DIR = 24;
 const FILE_MAX_BYTES = 256 * 1024;
