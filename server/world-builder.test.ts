@@ -39,10 +39,6 @@ test("squareCell fills a near-square footprint for any count", () => {
   }
 });
 
-test("the world has no buildings", () => {
-  expect(buildWorld([term("t1")], ["/a"]).buildings).toEqual([]);
-});
-
 test("each terminal becomes a level-0 terminal region", () => {
   const { regions } = buildWorld([term("t1"), term("t2")], []);
   const terms = regions.filter((r) => r.kind === "terminal");
@@ -118,7 +114,7 @@ test("work tint is deterministic per path; terminals share a tint", () => {
 });
 
 test("empty input yields an empty world", () => {
-  expect(buildWorld([], [])).toEqual({ buildings: [], regions: [] });
+  expect(buildWorld([], [])).toEqual({ regions: [] });
 });
 
 test("output is byte-identical across runs", () => {

@@ -155,7 +155,7 @@ export function buildWorld(
     ...terminals.map((t) => ({ key: t.id, footprint: TERMINAL_SIZE })),
     ...forest.map((n) => ({ key: n.dir, footprint: Math.max(n.size.w, n.size.h) })),
   ];
-  if (roots.length === 0) return { buildings: [], regions: [] };
+  if (roots.length === 0) return { regions: [] };
 
   // Drop cached slots that are no longer roots (e.g. a folder gained an
   // ancestor and became a child), then assign slots to new roots.
@@ -195,5 +195,5 @@ export function buildWorld(
     regions.push(...placeNode(node, cell.col * stride, cell.row * stride, 0));
   }
 
-  return { buildings: [], regions };
+  return { regions };
 }
