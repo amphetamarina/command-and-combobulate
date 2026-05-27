@@ -21,7 +21,7 @@ const ACTIVITY_TTL_MS = 6000;
 const FILES_PER_DIR = 24;
 const FILE_MAX_BYTES = 256 * 1024;
 const CACHE_PATH =
-  process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
+  process.env.CLANKER_CACHE ?? join(process.cwd(), ".clanker-cache.json");
 const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
