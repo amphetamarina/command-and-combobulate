@@ -1,0 +1,74 @@
+clanker.terminal:
+	Inherits: FACT
+	RenderSprites:
+		Image: clankerterminal
+	Buildable:
+		Queue: Building
+		BuildPaletteOrder: 5
+		# FACT is normally locked out of the palette by a ~disabled prerequisite;
+		# replace it with the always-available baseline (as POWR uses) so the
+		# Terminal builds like any other structure from the start.
+		Prerequisites: ~techlevel.infonly
+		Description: actor-clanker-terminal.description
+	Valued:
+		Cost: 100
+	Tooltip:
+		Name: actor-clanker-terminal.name
+	ClankerTerminalRef:
+	ClankerBuiltTerminal:
+
+clanker.folderwall:
+	Inherits: SBAG
+	RenderSprites:
+		Image: sbag
+	Interactable:
+	ClankerLabel:
+		Font: Bold
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFAA
+
+clanker.agent:
+	Inherits: JEEP
+	RenderSprites:
+		Image: jeep
+	ClankerLabel:
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFE066
+
+clanker.agent.opencode:
+	Inherits: APC
+	RenderSprites:
+		Image: apc
+	ClankerLabel:
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: 66CCFF
+
+clanker.agent.codex:
+	Inherits: ARTY
+	RenderSprites:
+		Image: arty
+	ClankerLabel:
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FF99CC
+
+clanker.agent.hermes:
+	Inherits: FTRK
+	RenderSprites:
+		Image: ftrk
+	ClankerLabel:
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: 99FF99
+
+clanker.subagent:
+	Inherits: E1
+	RenderSprites:
+		Image: e1
+	ClankerLabel:
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFE066
