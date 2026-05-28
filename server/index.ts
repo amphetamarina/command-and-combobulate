@@ -5,7 +5,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
-import { classifyFile, classifyOk, classifyVerb } from "./classify.ts";
+import { classifyFile } from "./classify.ts";
+import { TranscriptTailer, type TranscriptActivity } from "./transcript.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import { normalizeGrokPayload, type ClaudeHook } from "./grok-normalize.ts";
@@ -32,6 +33,11 @@ const workDirLastActive = new Map<string, number>();
 const filesByDir = new Map<string, Map<string, FileEntry>>();
 const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
+// Agent activity is read from each session's Claude transcript, not from hook
+// tool payloads (which omit the exit status). The hook only tells us the path
+// and pokes us to read. One tailer per session, keyed by terminal id.
+const tailers = new Map<string, { path: string; tailer: TranscriptTailer }>();
+const sessionTool = new Map<string, string>();
 let worldDirty = false;
 
 // Absolute paths to the adapters, injected as CLANKER_PATH (Claude plugin dir,
@@ -163,8 +169,53 @@ function isTrackedFile(path: string): boolean {
 }
 
 
-function ingest(session: string, tool: string, body: ClaudeHook): void {
+function registerTranscript(session: string, path: unknown): void {
+  if (typeof path !== "string" || !path) return;
+  const existing = tailers.get(session);
+  if (existing && existing.path === path) return;
+  tailers.set(session, { path, tailer: new TranscriptTailer(path) });
+}
+
+// Apply one transcript-derived activity to the session's agent: drive it to the
+// folder, record the file, and (once the outcome is known) log the action.
+function applyActivity(session: string, act: TranscriptActivity, now: number): void {
+  const agent = ensureAgent(session, sessionTool.get(session) ?? "claude");
+  const dir = act.filePath ? dirname(act.filePath) : act.cwd;
+  if (!dir || !dir.startsWith("/")) return;
+
+  agent.activity = {
+    path: act.filePath ?? dir,
+    dir,
+    direction: act.direction,
+    verb: act.verb,
+    ok: act.ok,
+  };
+  agent.activityTs = now;
+  touchWorkDir(dir, now);
+  if (act.filePath && act.direction !== "run") {
+    recordFile(dir, act.filePath, act.direction === "read" ? "read" : "write", now);
+  }
+  // Log once, at completion (ok resolved), so the start/end pair is one entry.
+  if (act.ok !== null) {
+    if (act.filePath) {
+      pushRecent(agent, `${act.direction === "read" ? "read" : "edit"} ${basename(act.filePath)}`);
+    } else if (act.command) {
+      pushRecent(agent, `run: ${act.command.replace(/\s+/g, " ").slice(0, 60)}`);
+    }
+  }
+}
+
+// Drain a session's transcript tailer, applying any newly appended activity.
+function pumpTranscript(session: string): void {
+  const entry = tailers.get(session);
+  if (!entry) return;
   const now = Date.now();
+  for (const act of entry.tailer.readNew()) applyActivity(session, act, now);
+}
+
+function ingest(session: string, tool: string, body: ClaudeHook): void {
+  sessionTool.set(session, tool);
+  registerTranscript(session, body.transcript_path);
   switch (body.hook_event_name) {
     case "SessionStart":
       ensureAgent(session, tool);
@@ -172,9 +223,11 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
     case "SessionEnd":
     case "Stop":
       removeSession(session);
+      tailers.delete(session);
+      sessionTool.delete(session);
       worldDirty = true;
       return;
-    case "SubagentStart": {
+    case "SubagentStart":
       ensureSubagent(
         session,
         body.agent_id,
@@ -182,49 +235,15 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
         typeof body.agent_type === "string" ? body.agent_type : "subagent",
       );
       return;
-    }
     case "SubagentStop":
       agents.delete(subId(session, body.agent_id));
       return;
     case "PreToolUse":
-    case "PostToolUse": {
-      const agent = body.agent_id
-        ? ensureSubagent(session, body.agent_id, tool, "subagent")
-        : ensureAgent(session, tool);
-      const post = body.hook_event_name === "PostToolUse";
-      const ok = post ? classifyOk(body.tool_response) : null;
-      const command =
-        typeof body.tool_input?.command === "string" ? body.tool_input.command : "";
-      const verb = classifyVerb(body.tool_name ?? "", command);
-      const file = body.tool_input?.file_path;
-      if (typeof file === "string" && file.startsWith("/")) {
-        const direction = body.tool_name === "Read" ? "read" : "write";
-        const dir = dirname(file);
-        agent.activity = { path: file, dir, direction, verb, ok };
-        agent.activityTs = now;
-        touchWorkDir(dir, now);
-        recordFile(dir, file, direction, now);
-        if (post) {
-          pushRecent(agent, `${direction === "read" ? "read" : "edit"} ${basename(file)}`);
-        }
-      } else if (body.tool_name === "Bash") {
-        // Bash has no file; show the robot working in the shell's cwd.
-        const cwd = typeof body.cwd === "string" ? body.cwd : "";
-        if (cwd.startsWith("/")) {
-          agent.activity = { path: cwd, dir: cwd, direction: "run", verb, ok };
-          agent.activityTs = now;
-          touchWorkDir(cwd, now);
-          if (post) {
-            const cmd =
-              typeof body.tool_input?.command === "string"
-                ? body.tool_input.command.replace(/\s+/g, " ").slice(0, 60)
-                : "";
-            pushRecent(agent, `run: ${cmd}`);
-          }
-        }
-      }
+    case "PostToolUse":
+      // The activity itself comes from the transcript, not this payload; the
+      // hook is only a poke to read whatever lines have just landed.
+      pumpTranscript(session);
       return;
-    }
     default:
       return;
   }
@@ -552,6 +571,10 @@ setInterval(() => {
   if (liveClients.size === 0) return;
   const now = Date.now();
 
+  // Pull any transcript activity that landed since the last tick (e.g. a
+  // tool_result that arrived just after its PostToolUse hook poked us).
+  for (const session of tailers.keys()) pumpTranscript(session);
+
   for (const [dir, last] of workDirLastActive) {
     if (now - last > WORK_DIR_TTL_MS) {
       workDirLastActive.delete(dir);
@@ -575,6 +598,8 @@ setInterval(() => {
     if (!liveTerms.has(id)) {
       knownTerminals.delete(id);
       removeSession(id);
+      tailers.delete(id);
+      sessionTool.delete(id);
       releaseRegion(placements, id);
       worldDirty = true;
     }

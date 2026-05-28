@@ -161,23 +161,3 @@ function classifyBash(command: string): ActivityVerb {
   }
   return "run";
 }
-
-// Claude Code's PostToolUse `tool_response` shape varies per tool and carries
-// no exit code, so derive the outcome: explicit failure fields win, then a Bash
-// command that wrote only to stderr is treated as failed, and any other
-// completed response is a success. Null only when there is no response to judge.
-export function classifyOk(toolResponse: unknown): boolean | null {
-  if (!toolResponse || typeof toolResponse !== "object") return null;
-  const r = toolResponse as Record<string, unknown>;
-  for (const key of ["exit_code", "exitCode", "code"]) {
-    if (typeof r[key] === "number") return r[key] === 0;
-  }
-  if (r.interrupted === true) return false;
-  if (r.success === false) return false;
-  if (r.is_error === true) return false;
-  if (r.error) return false;
-  const stdout = typeof r.stdout === "string" ? r.stdout.trim() : "";
-  const stderr = typeof r.stderr === "string" ? r.stderr.trim() : "";
-  if (stderr && !stdout) return false;
-  return true;
-}
