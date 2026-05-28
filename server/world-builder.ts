@@ -1,5 +1,6 @@
 import seedrandom from "seedrandom";
 import type { Region, World } from "../shared/types.ts";
+import { classifyDir } from "./classify.ts";
 
 // A folder reserves a top strip of FILE_ROWS for its own file icons, then lays
 // its child sub-folders in a grid below, padded by PAD and spaced by GAP. The
@@ -117,6 +118,7 @@ function placeNode(
       path: node.dir,
       kind: "work",
       label: node.dir,
+      role: classifyDir(node.dir),
       origin: { x: ox, y: oy },
       size: node.size,
       tint: WORK_TINTS[Math.floor(tintRng() * WORK_TINTS.length)]!,
@@ -183,6 +185,7 @@ export function buildWorld(
       path: t.id,
       kind: "terminal",
       label: t.label,
+      role: "other",
       origin: { x: ox, y: oy },
       size: { w: TERMINAL_SIZE, h: TERMINAL_SIZE },
       tint: TERMINAL_TINT,

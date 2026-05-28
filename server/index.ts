@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
+import { classifyFile, classifyOk, classifyVerb } from "./classify.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import { normalizeGrokPayload, type ClaudeHook } from "./grok-normalize.ts";
@@ -142,7 +143,14 @@ function recordFile(
   } catch {
     /* gone or unreadable */
   }
-  m.set(path, { path, name: basename(path), size, direction, ts: now });
+  m.set(path, {
+    path,
+    name: basename(path),
+    size,
+    direction,
+    role: classifyFile(path),
+    ts: now,
+  });
   if (m.size > FILES_PER_DIR) {
     const oldest = [...m.values()].sort((a, b) => a.ts - b.ts)[0];
     if (oldest) m.delete(oldest.path);
@@ -184,11 +192,15 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
         ? ensureSubagent(session, body.agent_id, tool, "subagent")
         : ensureAgent(session, tool);
       const post = body.hook_event_name === "PostToolUse";
+      const ok = post ? classifyOk(body.tool_response) : null;
+      const command =
+        typeof body.tool_input?.command === "string" ? body.tool_input.command : "";
+      const verb = classifyVerb(body.tool_name ?? "", command);
       const file = body.tool_input?.file_path;
       if (typeof file === "string" && file.startsWith("/")) {
         const direction = body.tool_name === "Read" ? "read" : "write";
         const dir = dirname(file);
-        agent.activity = { path: file, dir, direction };
+        agent.activity = { path: file, dir, direction, verb, ok };
         agent.activityTs = now;
         touchWorkDir(dir, now);
         recordFile(dir, file, direction, now);
@@ -199,7 +211,7 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
         // Bash has no file; show the robot working in the shell's cwd.
         const cwd = typeof body.cwd === "string" ? body.cwd : "";
         if (cwd.startsWith("/")) {
-          agent.activity = { path: cwd, dir: cwd, direction: "run" };
+          agent.activity = { path: cwd, dir: cwd, direction: "run", verb, ok };
           agent.activityTs = now;
           touchWorkDir(cwd, now);
           if (post) {
