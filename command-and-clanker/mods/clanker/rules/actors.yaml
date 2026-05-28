@@ -107,3 +107,47 @@ clanker.file3:
 		RequiresSelection: true
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
+
+clanker.file4:
+	Inherits: V08
+	RenderSprites:
+		Image: v08
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file5:
+	Inherits: V09
+	RenderSprites:
+		Image: v09
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file6:
+	Inherits: V10
+	RenderSprites:
+		Image: v10
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file7:
+	Inherits: V11
+	RenderSprites:
+		Image: v11
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF

@@ -43,7 +43,11 @@ namespace OpenRA.Mods.Clanker.Traits
 		[ActorReference]
 		[Desc("Civilian building actors placed inside a folder, one per file an agent",
 			"touches; the variant is chosen by file extension so similar files match.")]
-		public readonly string[] FileActors = { "clanker.file1", "clanker.file2", "clanker.file3" };
+		public readonly string[] FileActors =
+		{
+			"clanker.file1", "clanker.file2", "clanker.file3",
+			"clanker.file4", "clanker.file5", "clanker.file6", "clanker.file7",
+		};
 
 		[ActorReference]
 		[Desc("Unit spawned for each agent (Claude / default), homed on its terminal island.")]
