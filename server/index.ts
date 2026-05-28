@@ -327,8 +327,21 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     } catch {
       /* ignore malformed */
     }
+    if (process.env.CLANKER_DEBUG_INGEST) {
+      console.log(
+        `[ingest] tool=${tool} session=${session} body=${JSON.stringify(body)}`,
+      );
+    }
     if (session) {
       ingest(session, tool, body);
+      if (process.env.CLANKER_DEBUG_INGEST) {
+        const a = agents.get(session);
+        const sub = body.agent_id ? agents.get(subId(session, body.agent_id)) : null;
+        const target = sub ?? a;
+        console.log(
+          `[ingest] -> agent=${target?.id ?? "(none)"} activity=${JSON.stringify(target?.activity ?? null)} workDirs=${workDirLastActive.size}`,
+        );
+      }
       broadcastAgents();
       broadcastFiles();
     }
