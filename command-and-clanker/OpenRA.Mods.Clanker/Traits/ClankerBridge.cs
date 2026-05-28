@@ -287,11 +287,20 @@ namespace OpenRA.Mods.Clanker.Traits
 			var wall = info.WallActorsByLevel[Math.Min(region.Level, info.WallActorsByLevel.Length - 1)];
 			var name = Basename(region.Path);
 
+			// One-cell opening on the west wall at its midpoint, so the folder is
+			// reachable; agents already approach from this cell (see ApplyAgents).
+			// Skipped when the folder is too short to fit a non-corner door.
+			var hasDoor = height >= 3;
+			var doorY = height / 2;
+
 			for (var dy = 0; dy < height; dy++)
 			{
 				for (var dx = 0; dx < width; dx++)
 				{
 					if (dx != 0 && dy != 0 && dx != width - 1 && dy != height - 1)
+						continue;
+
+					if (hasDoor && dx == 0 && dy == doorY)
 						continue;
 
 					var cell = new CPos(ox + dx, oy + dy);
