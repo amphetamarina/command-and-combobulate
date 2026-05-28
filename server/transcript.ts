@@ -123,11 +123,13 @@ export function ingestLines(lines: string[], pending: Map<string, RawUse>): Tran
 // complete JSONL lines. Starts at the file's current end so reconnecting to a
 // live session does not replay its whole history.
 export class TranscriptTailer {
+  private readonly path: string;
   private offset: number;
   private buffer = "";
   private readonly pending = new Map<string, RawUse>();
 
-  constructor(private readonly path: string) {
+  constructor(path: string) {
+    this.path = path;
     let size = 0;
     try {
       size = statSync(path).size;
