@@ -61,7 +61,7 @@ test("classifyVerb maps tools and refines Bash by command", () => {
   expect(classifyVerb("Unknown", "")).toBe("run");
 });
 
-test("classifyOk reads known success/failure fields, else null", () => {
+test("classifyOk reads explicit success/failure fields", () => {
   expect(classifyOk({ exit_code: 0 })).toBe(true);
   expect(classifyOk({ exit_code: 1 })).toBe(false);
   expect(classifyOk({ exitCode: 2 })).toBe(false);
@@ -70,7 +70,23 @@ test("classifyOk reads known success/failure fields, else null", () => {
   expect(classifyOk({ success: false })).toBe(false);
   expect(classifyOk({ is_error: true })).toBe(false);
   expect(classifyOk({ error: "boom" })).toBe(false);
-  expect(classifyOk({ stdout: "hi" })).toBe(null);
+});
+
+test("classifyOk infers Bash failure from stderr without stdout", () => {
+  // Claude Code's Bash tool_response has no exit code, so a command that
+  // wrote only to stderr reads as a failure (e.g. `ls /nope`).
+  expect(classifyOk({ stdout: "", stderr: "ls: cannot access", interrupted: false })).toBe(false);
+  expect(classifyOk({ stdout: "files", stderr: "", interrupted: false })).toBe(true);
+  // A build that warns on stderr but produces stdout is still a success.
+  expect(classifyOk({ stdout: "compiled", stderr: "warning: x", interrupted: false })).toBe(true);
+});
+
+test("classifyOk treats a completed response with no failure markers as success", () => {
+  expect(classifyOk({ type: "create", filePath: "/a.cs" })).toBe(true);
+  expect(classifyOk({ file: { content: "..." } })).toBe(true);
+});
+
+test("classifyOk is null when the outcome is unknown", () => {
   expect(classifyOk(undefined)).toBe(null);
   expect(classifyOk("plain string")).toBe(null);
 });
