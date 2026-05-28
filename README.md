@@ -1,6 +1,8 @@
 # Command & Clanker
 <img width="512" height="256" alt="clanker-loadscreen" src="https://github.com/user-attachments/assets/61281ddd-34d0-4cf6-9692-9d8deeaeb24f" />
 
+<video width="1280" height="720" src="assets/demo002.mp4" controls></video>
+
 
 
 Run an AI agent inside a terminal you build in-game and watch it play out on an OpenRA map: every
