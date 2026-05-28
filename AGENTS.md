@@ -100,10 +100,17 @@ Mod-only flow (from `command-and-clanker/`):
 
 ## Engineering standards
 
-Marina's global engineering standards (self-documenting code, atomic commits
-with detailed bodies, TDD when applicable) apply here. They are enforced via
-the `workspace-plugin:engineering-standards` skill — load it before writing
-code or commits if it has not already been loaded.
+- Write self-documenting code. Default to zero comments; only add one when
+  the *why* is non-obvious (a hidden constraint, a subtle invariant, a
+  workaround for a specific bug). Never restate what the code does.
+- Make atomic commits. Decompose each task into the smallest independently
+  revertable units and commit one per unit, leaving the repo in a working
+  state. Commit messages use an imperative subject under 72 characters,
+  then a blank line and a body that explains *what* changed and *why*.
+- Follow TDD when the situation permits — testable interface, test
+  framework available, behaviour-bearing change. Red, green, refactor, in
+  that order. State explicitly when TDD does not apply (spike, prototype,
+  pure config or formatting change) before proceeding without tests.
 
 ## Things to avoid
 
