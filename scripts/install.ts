@@ -105,7 +105,21 @@ async function installHermes(): Promise<string> {
     return "skipped (no ~/.hermes/config.yaml)";
   }
   await chmod(hermesHook, 0o755);
-  if (text.includes("clanker-hermes-hook.mjs")) return `${path} (already wired)`;
+
+  // Rewrite any previously-installed clanker hook line to point at the current
+  // absolute path. A repo move or rename (e.g. the old "isotop" location) would
+  // otherwise leave hermes invoking a missing file silently, since hermes only
+  // logs hook errors at high verbosity.
+  const staleHook = /^(\s*-\s*command:\s*node\s+)(\S*clanker-hermes-hook\.mjs)\s*$/gm;
+  if (staleHook.test(text)) {
+    const fixed = text.replace(staleHook, (_, prefix) => `${prefix}${hermesHook}`);
+    if (fixed !== text) {
+      await writeFile(`${path}.clanker.bak`, text);
+      await writeFile(path, fixed);
+      return `${path} (rewrote stale clanker hook path -> ${hermesHook})`;
+    }
+    return `${path} (already wired)`;
+  }
 
   const block =
     "hooks:\n" +
