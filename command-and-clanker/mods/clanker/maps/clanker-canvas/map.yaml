@@ -56,6 +56,27 @@ Actors:
 	ranger3: JEEP
 		Location: 18,23
 		Owner: Multi0
+	afld1: AFLD
+		Location: 20,13
+		Owner: Multi0
+	aircraft1: YAK
+		Location: 21,13
+		Owner: Multi0
+		Facing: 640
+	afld2: AFLD
+		Location: 20,18
+		Owner: Multi0
+	aircraft2: YAK
+		Location: 21,18
+		Owner: Multi0
+		Facing: 640
+	afld3: AFLD
+		Location: 14,26
+		Owner: Multi0
+	aircraft3: YAK
+		Location: 15,26
+		Owner: Multi0
+		Facing: 640
 
 Rules:
 	Player:
