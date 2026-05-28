@@ -33,6 +33,94 @@ a Command & Clanker adapter (see `integrations/`) that POSTs each tool call to
 `/ingest`, authorized by the token and tagged with the session via
 `X-Clanker-Session` (and the tool via `X-Clanker-Tool`).
 
+## Filesystem → map
+
+The map is not a mirror of the filesystem. Only the parts an agent actually
+touches show up, and the layout is engineered for stability — files coming and
+going never reshuffle the world.
+
+### What becomes a region
+
+Two things produce regions on the map:
+
+- **Terminal islands** — one per live terminal, fixed footprint
+  (`TERMINAL_SIZE`). Identified by the terminal id (`t1`, `t2`, …), not a
+  filesystem path.
+- **Folder islands ("work" regions)** — one per *touched* directory. A
+  directory is touched when an agent reads or writes a file inside it
+  (`PostToolUse` with a `file_path` → that file's parent dir) or runs a
+  command from it (Bash → the shell's cwd). Untouched directories — including
+  intermediate ones on the path — do not exist on the map.
+
+Touched dirs are tracked in `workDirLastActive` (`server/index.ts`) and a
+janitor sweep evicts ones idle past a TTL, which drops their regions from the
+next world tick.
+
+### Nesting by path prefix
+
+`buildForest` in `server/world-builder.ts` arranges touched dirs into a
+forest:
+
+- Sort the touched dirs.
+- For each dir, its parent is the **deepest other touched dir that is a path
+  prefix of it** (matched with a trailing `/` so `/foo/bar` does not adopt
+  `/foo/barn`).
+- Dirs with no touched ancestor become roots.
+
+So if an agent only touches `/a/b/c` and `/a/b/c/d/e`, only those two regions
+exist and the second nests inside the first — `/a`, `/a/b`, and `/a/b/c/d`
+are invisible. If the agent later touches `/a/b`, it becomes a new ancestor;
+the old root re-parents under it on the next tick, and `PlacementCache`
+releases the now-orphaned root slot.
+
+### Where files live inside a folder
+
+Each folder region carves its interior into two zones (see `placeNode` and
+the `fileArea` field on `Region`):
+
+- A top **file strip** of height `FILE_ROWS`, padded by `PAD`. This is the
+  `fileArea` rectangle the client paints file icons into.
+- A grid of child folder regions below the strip, laid out roughly square
+  (`ceil(sqrt(children))` columns), separated by `GAP`. The parent's size
+  expands to contain them.
+
+Touched files are recorded by `recordFile` (`server/index.ts`) into
+`filesByDir[dir]`, capped at `FILES_PER_DIR` with oldest-evicted-first. Each
+entry carries `direction: "read" | "write"`, size, and a timestamp; the mod
+renders them as fog-hidden civilian buildings inside the parent region's
+`fileArea`. Files coming and going never resize the region — only the set of
+touched *folders* does.
+
+### Stability guarantees
+
+Two layers of placement caching keep the map calm:
+
+- `PlacementCache.region` assigns each root (terminal or top-level folder) a
+  stable integer slot on a meta-grid (`squareCell` spirals outward). When a
+  root disappears, its slot is recycled via `freeRegionSlots` so a new root
+  fills the gap nearest the origin instead of pushing everything outward.
+- Inside a folder, child order is `dirs.sort()` and the grid shape is a
+  function of the child count, so adding a child only reshapes that subtree.
+- The mod (`ClankerBridge`) lays files inside `fileArea` keyed by stable rows
+  so an evicted file's neighbours do not slide.
+
+Cache state is persisted to `.clanker-cache.json` (`server/persistence.ts`)
+so slots survive a backend restart.
+
+### Wire-level summary
+
+A client gets the filesystem view in two streams:
+
+- `world-delta` (and the `/world` snapshot) carries `Region[]`: terminal and
+  folder rectangles with `origin`, `size`, `level`, and `fileArea`.
+- `files` carries `{ dir, entries: FileEntry[] }[]`: per-folder file lists,
+  with each entry's `direction` and `ts`. The client positions entries
+  inside the matching region's `fileArea`.
+
+Agents reference the filesystem through their `activity` field
+(`{ path, dir, direction }`), which is how an agent unit knows which folder
+region to drive to and which file to act on.
+
 ## Backend (Node)
 
 Runs under Node 22 with `--experimental-strip-types` (executes `.ts` directly);
