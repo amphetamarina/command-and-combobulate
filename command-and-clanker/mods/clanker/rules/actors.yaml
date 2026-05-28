@@ -1,5 +1,10 @@
 clanker.terminal:
 	Inherits: PDOX
+	# RenderSprites.Image defaults to the actor name, so without this override
+	# the engine looks for sequences under `clanker.terminal` instead of `pdox`
+	# and the production palette crashes refreshing the cameo.
+	RenderSprites:
+		Image: pdox
 	Buildable:
 		Queue: Building
 		BuildPaletteOrder: 5
