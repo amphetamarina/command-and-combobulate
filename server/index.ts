@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
+import { normalizeGrokPayload, type ClaudeHook } from "./grok-normalize.ts";
 import type { World } from "../shared/types.ts";
 import type {
   AgentSnapshot,
@@ -153,16 +154,6 @@ function isTrackedFile(path: string): boolean {
   return false;
 }
 
-// Normalize a Claude Code hook payload into agent/world state. The terminal
-// island id arrives out of band in the X-Clanker-Session header.
-type ClaudeHook = {
-  hook_event_name?: string;
-  tool_name?: string;
-  tool_input?: { file_path?: unknown; command?: unknown };
-  agent_id?: unknown;
-  agent_type?: unknown;
-  cwd?: unknown;
-};
 
 function ingest(session: string, tool: string, body: ClaudeHook): void {
   const now = Date.now();
@@ -323,12 +314,29 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const tool = String(req.headers["x-clanker-tool"] ?? "claude");
     let body: ClaudeHook = {};
     try {
-      body = (await readBody(req)) as ClaudeHook;
+      const raw = (await readBody(req)) as Record<string, unknown>;
+      body =
+        tool === "grok"
+          ? normalizeGrokPayload(raw)
+          : (raw as unknown as ClaudeHook);
     } catch {
       /* ignore malformed */
     }
+    if (process.env.CLANKER_DEBUG_INGEST) {
+      console.log(
+        `[ingest] tool=${tool} session=${session} body=${JSON.stringify(body)}`,
+      );
+    }
     if (session) {
       ingest(session, tool, body);
+      if (process.env.CLANKER_DEBUG_INGEST) {
+        const a = agents.get(session);
+        const sub = body.agent_id ? agents.get(subId(session, body.agent_id)) : null;
+        const target = sub ?? a;
+        console.log(
+          `[ingest] -> agent=${target?.id ?? "(none)"} activity=${JSON.stringify(target?.activity ?? null)} workDirs=${workDirLastActive.size}`,
+        );
+      }
       broadcastAgents();
       broadcastFiles();
     }
