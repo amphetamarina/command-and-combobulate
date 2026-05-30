@@ -283,16 +283,34 @@ namespace OpenRA.Mods.Clanker.Traits
 			RebuildConnectors(w);
 		}
 
+		// The perimeter wall that styles a folder's compound by what the directory
+		// is for: concrete for a source base, barbed wire for dependency sprawl, a
+		// fence for docs/CI, sandbags for tests. Unclassified folders fall back to
+		// the depth-tiered wall so nesting still reads.
+		string WallActorForRole(string role, int level)
+		{
+			switch (role)
+			{
+				case "source": return "brik";
+				case "vcs": return "brik";
+				case "tests": return "sbag";
+				case "deps": return "barb";
+				case "ci": return "fenc";
+				case "docs": return "wood";
+				default: return info.WallActorsByLevel[Math.Min(level, info.WallActorsByLevel.Length - 1)];
+			}
+		}
+
 		// Outlines a folder region along the perimeter of its server-computed box,
-		// so child folders sit visibly inside their parent and the wall tier rises
-		// with nesting depth.
+		// so child folders sit visibly inside their parent and the wall styles the
+		// district by its role.
 		List<Actor> BuildFolderWalls(World w, Region region)
 		{
 			var walls = new List<Actor>();
 			var (ox, oy) = coords.RegionOrigin(region);
 			var width = region.Size.W;
 			var height = region.Size.H;
-			var wall = info.WallActorsByLevel[Math.Min(region.Level, info.WallActorsByLevel.Length - 1)];
+			var wall = WallActorForRole(region.Role, region.Level);
 			var name = Basename(region.Path);
 
 			// One-cell opening on the west wall at its midpoint, so the folder is
