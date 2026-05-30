@@ -31,6 +31,13 @@ clanker.terminal:
 	-MustBeDestroyed:
 	ClankerTerminalRef:
 	ClankerBuiltTerminal:
+	# Context-window readout over the terminal; the bridge sets the text and
+	# reddens it as the agent's context fills (the base browns out).
+	ClankerLabel:
+		Font: Bold
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: 9EE6A0
 
 clanker.folderwall:
 	Inherits: SBAG

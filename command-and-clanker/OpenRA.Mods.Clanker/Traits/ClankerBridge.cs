@@ -392,6 +392,32 @@ namespace OpenRA.Mods.Clanker.Traits
 			return (verb ?? "").ToUpperInvariant();
 		}
 
+		// Paints a "ctx NN%" readout over the terminal that reddens as the agent's
+		// context window fills (green -> amber -> red), so the base visibly browns
+		// out as it runs low on headroom. Cleared when the fill is unknown.
+		void UpdateContextReadout(string terminal, double? fraction)
+		{
+			if (!islands.TryGetValue(terminal, out var island) || !island.IsInWorld)
+				return;
+
+			var label = island.TraitOrDefault<ClankerLabel>();
+			if (label == null)
+				return;
+
+			if (fraction == null)
+			{
+				label.Label = "";
+				label.LabelColor = null;
+				return;
+			}
+
+			var pct = (int)Math.Round(Math.Clamp(fraction.Value, 0, 1) * 100);
+			label.Label = $"ctx {pct}%";
+			label.LabelColor = fraction.Value >= 0.85 ? Color.Red
+				: fraction.Value >= 0.6 ? Color.Yellow
+				: Color.Lime;
+		}
+
 		// Fires once when an agent's action fails: an explosion plus red "FAILED"
 		// over the unit. Success is left silent -- the verb label already shows
 		// ongoing work, so a per-action success cue would only add noise. Keyed
@@ -575,6 +601,7 @@ namespace OpenRA.Mods.Clanker.Traits
 					{
 						termRef.Recent = snap.Recent ?? new List<string>();
 						termRef.Activity = DescribeActivity(snap.Activity);
+						UpdateContextReadout(snap.Terminal, snap.ContextFraction);
 					}
 
 					if (snap.Activity != null && folderRegions.ContainsKey(snap.Activity.Dir))
