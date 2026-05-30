@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using OpenRA.Graphics;
 using OpenRA.Mods.Clanker.Protocol;
+using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Activities;
 using OpenRA.Mods.Common.Effects;
 using OpenRA.Mods.Common.Graphics;
@@ -69,6 +70,24 @@ namespace OpenRA.Mods.Clanker.Traits
 		[ActorReference]
 		[Desc("Unit spawned for each subagent.")]
 		public readonly string SubagentActor = "clanker.subagent";
+
+		[ActorReference]
+		[Desc("Transient machines spawned at an action site, one per verb, that",
+			"appear while the agent works and then remove themselves. Edit brings",
+			"an engineer, build a harvester, destroy a tank, search a scout dog.")]
+		public readonly string EditUnit = "e6";
+		public readonly string BuildUnit = "harv";
+		public readonly string DestroyUnit = "3tnk";
+		public readonly string SearchUnit = "dog";
+
+		[ActorReference]
+		[Desc("Transport aircraft flown in from the map edge for an external",
+			"fetch (WebFetch / WebSearch), then sent back out and removed.")]
+		public readonly string FetchAircraft = "tran";
+
+		[Desc("How long (ticks) a transient work machine lingers before removing",
+			"itself.")]
+		public readonly int WorkUnitTicks = 50;
 
 		[Desc("Internal name of the player that owns the spawned world. It must",
 			"not be allied to the commander, so islands stay hidden under fog",
@@ -418,23 +437,126 @@ namespace OpenRA.Mods.Clanker.Traits
 				: Color.Lime;
 		}
 
-		// Fires once when an agent's action fails: an explosion plus red "FAILED"
-		// over the unit. Success is left silent -- the verb label already shows
-		// ongoing work, so a per-action success cue would only add noise. Keyed
-		// on the (verb|path|ok) signature so it does not re-fire while the
-		// snapshot for that same action keeps arriving each tick.
-		void FireActivityFx(World w, Actor unit, string id, FileActivity activity)
+		// Fires once per action state-change, keyed on the (verb|path|ok)
+		// signature so it does not re-fire while the same snapshot keeps arriving.
+		// On start (ok unknown) the verb's machine takes the stage; on a failed
+		// completion the building explodes; a successful completion stays silent.
+		void FireActivityEffects(World w, Actor unit, Actor terminal, string id, FileActivity activity)
 		{
 			var sig = activity == null ? "" : $"{activity.Verb}|{activity.Path}|{activity.Ok}";
 			agentActivitySig.TryGetValue(id, out var prev);
 			agentActivitySig[id] = sig;
 
-			if (sig == "" || sig == prev || activity.Ok != false || !unit.IsInWorld)
+			if (sig == "" || sig == prev || !unit.IsInWorld)
 				return;
 
-			var pos = unit.CenterPosition;
-			w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
-			w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
+			if (activity.Ok == false)
+			{
+				var pos = unit.CenterPosition;
+				w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
+				w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
+			}
+			else if (activity.Ok == null)
+			{
+				SpawnVerbMachine(w, unit, terminal, activity.Verb);
+			}
+		}
+
+		// Brings a verb-appropriate machine on stage at the action: an engineer
+		// for an edit, a harvester for a build, a tank for a destroy, a scout dog
+		// for a search, and a transport aircraft flown in for an external fetch.
+		void SpawnVerbMachine(World w, Actor unit, Actor terminal, string verb)
+		{
+			switch (verb)
+			{
+				case "edit": SpawnWorkUnit(w, info.EditUnit, unit.Location); break;
+				case "build": SpawnWorkUnit(w, info.BuildUnit, unit.Location); break;
+				case "destroy": SpawnWorkUnit(w, info.DestroyUnit, unit.Location); break;
+				case "search": SpawnWorkUnit(w, info.SearchUnit, unit.Location); break;
+				case "fetch":
+					if (terminal != null && terminal.IsInWorld)
+						SpawnFetchAircraft(w, terminal.CenterPosition);
+					break;
+			}
+		}
+
+		// Spawns a short-lived ground machine near the agent that removes itself
+		// after WorkUnitTicks, so the work reads on the map without piling up.
+		void SpawnWorkUnit(World w, string actorName, CPos near)
+		{
+			if (string.IsNullOrEmpty(actorName))
+				return;
+
+			var cell = FindFreeCell(w, near);
+			if (cell == null)
+				return;
+
+			var unit = w.CreateActor(actorName,
+			[
+				new LocationInit(cell.Value),
+				new OwnerInit(owner),
+			]);
+			unit.QueueActivity(new Wait(info.WorkUnitTicks));
+			unit.QueueActivity(new RemoveSelf());
+		}
+
+		// The first unoccupied in-map cell at or next to `near`, or null if none.
+		CPos? FindFreeCell(World w, CPos near)
+		{
+			CVec[] offsets =
+			[
+				new CVec(0, 0), new CVec(1, 0), new CVec(0, 1),
+				new CVec(-1, 0), new CVec(0, -1), new CVec(1, 1),
+			];
+			foreach (var o in offsets)
+			{
+				var cell = near + o;
+				if (!w.Map.Contains(cell))
+					continue;
+
+				var occupied = false;
+				foreach (var _ in w.ActorMap.GetActorsAt(cell))
+				{
+					occupied = true;
+					break;
+				}
+
+				if (!occupied)
+					return cell;
+			}
+
+			return null;
+		}
+
+		// Flies a transport in from the map edge nearest the terminal, over the
+		// base, then back out and gone -- an external fetch arriving from off-map.
+		void SpawnFetchAircraft(World w, WPos terminalPos)
+		{
+			var unitType = info.FetchAircraft;
+			if (string.IsNullOrEmpty(unitType) || !w.Map.Rules.Actors.ContainsKey(unitType))
+				return;
+
+			var aircraftInfo = w.Map.Rules.Actors[unitType].TraitInfoOrDefault<AircraftInfo>();
+			if (aircraftInfo == null)
+				return;
+
+			var facing = WAngle.Zero;
+			var delta = new WVec(0, -1024, 0).Rotate(WRot.FromYaw(facing));
+			var target = terminalPos + new WVec(0, 0, aircraftInfo.CruiseAltitude.Length);
+			var cordon = WDist.FromCells(3);
+			var startEdge = target - (w.Map.DistanceToEdge(target, -delta) + cordon).Length * delta / 1024;
+			var finishEdge = target + (w.Map.DistanceToEdge(target, delta) + cordon).Length * delta / 1024;
+
+			var plane = w.CreateActor(false, unitType,
+			[
+				new CenterPositionInit(startEdge),
+				new OwnerInit(owner),
+				new FacingInit(facing),
+			]);
+			w.Add(plane);
+			plane.QueueActivity(new Fly(plane, Target.FromPos(target)));
+			plane.QueueActivity(new Fly(plane, Target.FromPos(finishEdge)));
+			plane.QueueActivity(new RemoveSelf());
 		}
 
 		// Places one civilian building per touched file inside the folder's file
@@ -651,7 +773,10 @@ namespace OpenRA.Mods.Clanker.Traits
 					agentTarget[snap.Id] = target;
 				}
 
-				FireActivityFx(w, unit, snap.Id, snap.Activity);
+				Actor termActor = null;
+				if (snap.Terminal != null)
+					islands.TryGetValue(snap.Terminal, out termActor);
+				FireActivityEffects(w, unit, termActor, snap.Id, snap.Activity);
 
 				if (agentLabels.TryGetValue(snap.Id, out var label) && label != null)
 					label.Label = ActivityLabel(snap.Activity);
