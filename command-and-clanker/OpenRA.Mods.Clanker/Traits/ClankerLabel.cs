@@ -35,6 +35,10 @@ namespace OpenRA.Mods.Clanker.Traits
 		// A torn read of a string reference is harmless, so no synchronization.
 		public string Label = "";
 
+		// Optional per-instance colour override (e.g. a context readout reddening
+		// as it fills); falls back to the actor's configured colour when null.
+		public Color? LabelColor = null;
+
 		public ClankerLabel(Actor self, ClankerLabelInfo info)
 			: base(self, info)
 		{
@@ -47,7 +51,7 @@ namespace OpenRA.Mods.Clanker.Traits
 				return [];
 
 			var size = font.Measure(Label);
-			return [new UITextRenderable(font, self.CenterPosition, screenPos - (size / 2), 0, Info.Color, Label)];
+			return [new UITextRenderable(font, self.CenterPosition, screenPos - (size / 2), 0, LabelColor ?? Info.Color, Label)];
 		}
 	}
 }

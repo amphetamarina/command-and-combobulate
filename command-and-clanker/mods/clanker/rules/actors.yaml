@@ -22,7 +22,6 @@ clanker.terminal:
 	Power:
 		Amount: 0
 	-ChronoshiftPower@chronoshift:
-	-ChronoshiftPower@advancedchronoshift:
 	-SupportPowerChargeBar:
 	-InfiltrateForSupportPowerReset:
 	-ProvidesPrerequisite@germany:
@@ -31,6 +30,13 @@ clanker.terminal:
 	-MustBeDestroyed:
 	ClankerTerminalRef:
 	ClankerBuiltTerminal:
+	# Context-window readout over the terminal; the bridge sets the text and
+	# reddens it as the agent's context fills (the base browns out).
+	ClankerLabel:
+		Font: Bold
+		Position: Top
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: 9EE6A0
 
 clanker.folderwall:
 	Inherits: SBAG
@@ -44,9 +50,18 @@ clanker.folderwall:
 		Color: FFFFAA
 
 clanker.agent:
-	Inherits: JEEP
+	Inherits: HELI
 	RenderSprites:
-		Image: jeep
+		Image: heli
+	# The agent flies (fast, and straight over folder walls) and hovers where it
+	# is working. It stays Neutral with HoldFire stance and is never given an
+	# attack order, and its ammo never depletes (it never fires), so it neither
+	# fights nor flies off to a helipad to rearm; a helicopter's idle behaviour
+	# is to hover in place. Only Buildable is dropped (its prerequisites do not
+	# exist in this mod, and the bridge spawns the agent directly).
+	-Buildable:
+	Aircraft:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -56,6 +71,8 @@ clanker.agent.opencode:
 	Inherits: APC
 	RenderSprites:
 		Image: apc
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -65,6 +82,8 @@ clanker.agent.codex:
 	Inherits: ARTY
 	RenderSprites:
 		Image: arty
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -74,6 +93,8 @@ clanker.agent.hermes:
 	Inherits: FTRK
 	RenderSprites:
 		Image: ftrk
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -83,6 +104,8 @@ clanker.subagent:
 	Inherits: E1
 	RenderSprites:
 		Image: e1
+	Mobile:
+		Speed: 120
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -160,6 +183,79 @@ clanker.file7:
 	Inherits: V11
 	RenderSprites:
 		Image: v11
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+# Iconic role buildings: a touched file's kind reads from its silhouette -- a
+# barracks for tests, a power plant for config, a tech center for a manifest, a
+# radar dome for docs, a silo for build output. They are spawned as inert
+# neutral decorations: Buildable is dropped (no production here) and Power is
+# zeroed so they do not perturb a power grid.
+clanker.file.test:
+	Inherits: TENT
+	RenderSprites:
+		Image: tent
+	-Buildable:
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file.config:
+	Inherits: POWR
+	RenderSprites:
+		Image: powr
+	-Buildable:
+	Power:
+		Amount: 0
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file.manifest:
+	Inherits: ATEK
+	RenderSprites:
+		Image: atek
+	-Buildable:
+	Power:
+		Amount: 0
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file.docs:
+	Inherits: DOME
+	RenderSprites:
+		Image: dome
+	-Buildable:
+	Power:
+		Amount: 0
+	ClankerLabel:
+		Font: TinyBold
+		Position: Top
+		RequiresSelection: true
+		ValidRelationships: Ally, Neutral, Enemy
+		Color: FFFFFF
+
+clanker.file.build:
+	Inherits: SILO
+	RenderSprites:
+		Image: silo
+	-Buildable:
+	Power:
+		Amount: 0
 	ClankerLabel:
 		Font: TinyBold
 		Position: Top

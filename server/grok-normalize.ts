@@ -4,6 +4,10 @@ export type ClaudeHook = {
   hook_event_name?: string;
   tool_name?: string;
   tool_input?: { file_path?: unknown; command?: unknown };
+  tool_response?: unknown;
+  transcript_path?: unknown;
+  agent_transcript_path?: unknown;
+  model?: unknown;
   agent_id?: unknown;
   agent_type?: unknown;
   cwd?: unknown;

@@ -1,14 +1,19 @@
 import seedrandom from "seedrandom";
 import type { Region, World } from "../shared/types.ts";
+import { classifyDir } from "./classify.ts";
 
 // A folder reserves a top strip of FILE_ROWS for its own file icons, then lays
 // its child sub-folders in a grid below, padded by PAD and spaced by GAP. The
 // parent expands to contain its children, so subfolders nest inside instead of
 // scattering across the map.
+//
+// FILE_ROWS is 3 so the strip can hold a full-height role building (a 2x3
+// barracks/power plant/etc.), and LEAF_W is wide enough to seat a row of them
+// stepped two-wide-plus-a-gap (the mod places one building per touched file).
 const PAD = 1;
 const FILE_ROWS = 3;
 const GAP = 1;
-const LEAF_W = 4;
+const LEAF_W = 11;
 const TERMINAL_SIZE = 4;
 const REGION_GUTTER = 2;
 
@@ -117,6 +122,7 @@ function placeNode(
       path: node.dir,
       kind: "work",
       label: node.dir,
+      role: classifyDir(node.dir),
       origin: { x: ox, y: oy },
       size: node.size,
       tint: WORK_TINTS[Math.floor(tintRng() * WORK_TINTS.length)]!,
@@ -183,6 +189,7 @@ export function buildWorld(
       path: t.id,
       kind: "terminal",
       label: t.label,
+      role: "other",
       origin: { x: ox, y: oy },
       size: { w: TERMINAL_SIZE, h: TERMINAL_SIZE },
       tint: TERMINAL_TINT,

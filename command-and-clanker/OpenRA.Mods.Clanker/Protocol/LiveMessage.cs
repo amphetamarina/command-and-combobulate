@@ -34,6 +34,7 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("path")] public string Path { get; set; }
 		[JsonPropertyName("kind")] public string Kind { get; set; }
 		[JsonPropertyName("label")] public string Label { get; set; }
+		[JsonPropertyName("role")] public string Role { get; set; }
 		[JsonPropertyName("origin")] public TileXY Origin { get; set; }
 		[JsonPropertyName("size")] public TileWH Size { get; set; }
 		[JsonPropertyName("tint")] public long Tint { get; set; }
@@ -48,6 +49,11 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("path")] public string Path { get; set; }
 		[JsonPropertyName("dir")] public string Dir { get; set; }
 		[JsonPropertyName("direction")] public string Direction { get; set; }
+		[JsonPropertyName("verb")] public string Verb { get; set; }
+
+		// Null until the action completes (PostToolUse) or when the backend
+		// could not read an exit status; true/false otherwise.
+		[JsonPropertyName("ok")] public bool? Ok { get; set; }
 	}
 
 	public class AgentSnapshot
@@ -60,6 +66,8 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("label")] public string Label { get; set; }
 		[JsonPropertyName("activity")] public FileActivity Activity { get; set; }
 		[JsonPropertyName("recent")] public List<string> Recent { get; set; }
+		[JsonPropertyName("contextFraction")] public double? ContextFraction { get; set; }
+		[JsonPropertyName("lastMessage")] public string LastMessage { get; set; }
 
 		public bool IsSubagent => Kind == "subagent";
 	}
@@ -70,6 +78,7 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("name")] public string Name { get; set; }
 		[JsonPropertyName("size")] public long Size { get; set; }
 		[JsonPropertyName("direction")] public string Direction { get; set; }
+		[JsonPropertyName("role")] public string Role { get; set; }
 		[JsonPropertyName("ts")] public long Ts { get; set; }
 	}
 

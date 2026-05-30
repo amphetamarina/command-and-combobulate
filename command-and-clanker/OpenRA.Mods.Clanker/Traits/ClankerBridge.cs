@@ -8,7 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using OpenRA.Graphics;
 using OpenRA.Mods.Clanker.Protocol;
+using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Activities;
+using OpenRA.Mods.Common.Effects;
 using OpenRA.Mods.Common.Graphics;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
@@ -69,6 +71,24 @@ namespace OpenRA.Mods.Clanker.Traits
 		[Desc("Unit spawned for each subagent.")]
 		public readonly string SubagentActor = "clanker.subagent";
 
+		[ActorReference]
+		[Desc("Transient machines spawned at an action site, one per verb, that",
+			"appear while the agent works and then remove themselves. Edit brings",
+			"an engineer, build a harvester, destroy a tank, search a scout dog.")]
+		public readonly string EditUnit = "e6";
+		public readonly string BuildUnit = "harv";
+		public readonly string DestroyUnit = "3tnk";
+		public readonly string SearchUnit = "dog";
+
+		[ActorReference]
+		[Desc("Transport aircraft flown in from the map edge for an external",
+			"fetch (WebFetch / WebSearch), then sent back out and removed.")]
+		public readonly string FetchAircraft = "tran";
+
+		[Desc("How long (ticks) a transient work machine lingers before removing",
+			"itself.")]
+		public readonly int WorkUnitTicks = 50;
+
 		[Desc("Internal name of the player that owns the spawned world. It must",
 			"not be allied to the commander, so islands stay hidden under fog",
 			"until they are scouted.")]
@@ -93,6 +113,14 @@ namespace OpenRA.Mods.Clanker.Traits
 		readonly Dictionary<string, CPos> agentHome = new();
 		readonly Dictionary<string, CPos> agentTarget = new();
 		readonly Dictionary<string, ClankerLabel> agentLabels = new();
+		// Current action key (verb|path) per agent: spawn the verb machine once
+		// when this changes. The agent's start state (ok null) is collapsed into
+		// the completion server-side before broadcast, so keying on ok would
+		// never fire -- key on the action identity instead.
+		readonly Dictionary<string, string> agentActionKey = new();
+		// Agents whose current action has already triggered the failure effect,
+		// so a non-zero exit explodes once even as the snapshot keeps arriving.
+		readonly HashSet<string> agentExploded = new();
 		readonly Dictionary<string, string> activeLinks = new();
 		IReadOnlyList<(WPos Start, WPos End, Color Color)> connectors = new List<(WPos, WPos, Color)>();
 
@@ -279,16 +307,34 @@ namespace OpenRA.Mods.Clanker.Traits
 			RebuildConnectors(w);
 		}
 
+		// The perimeter wall that styles a folder's compound by what the directory
+		// is for: concrete for a source base, barbed wire for dependency sprawl, a
+		// fence for docs/CI, sandbags for tests. Unclassified folders fall back to
+		// the depth-tiered wall so nesting still reads.
+		string WallActorForRole(string role, int level)
+		{
+			switch (role)
+			{
+				case "source": return "brik";
+				case "vcs": return "brik";
+				case "tests": return "sbag";
+				case "deps": return "barb";
+				case "ci": return "fenc";
+				case "docs": return "wood";
+				default: return info.WallActorsByLevel[Math.Min(level, info.WallActorsByLevel.Length - 1)];
+			}
+		}
+
 		// Outlines a folder region along the perimeter of its server-computed box,
-		// so child folders sit visibly inside their parent and the wall tier rises
-		// with nesting depth.
+		// so child folders sit visibly inside their parent and the wall styles the
+		// district by its role.
 		List<Actor> BuildFolderWalls(World w, Region region)
 		{
 			var walls = new List<Actor>();
 			var (ox, oy) = coords.RegionOrigin(region);
 			var width = region.Size.W;
 			var height = region.Size.H;
-			var wall = info.WallActorsByLevel[Math.Min(region.Level, info.WallActorsByLevel.Length - 1)];
+			var wall = WallActorForRole(region.Role, region.Level);
 			var name = Basename(region.Path);
 
 			// One-cell opening on the west wall at its midpoint, so the folder is
@@ -359,10 +405,183 @@ namespace OpenRA.Mods.Clanker.Traits
 			};
 		}
 
+		// The verb is the primary read on the unit's label (READ, EDIT, BUILD,
+		// DESTROY, FETCH, SPAWN, ...); fall back to the coarse direction.
+		static string ActivityLabel(FileActivity activity)
+		{
+			if (activity == null)
+				return "";
+
+			var verb = string.IsNullOrEmpty(activity.Verb) ? activity.Direction : activity.Verb;
+			return (verb ?? "").ToUpperInvariant();
+		}
+
+		// Paints the agent's latest message over its terminal, coloured by how full
+		// its context window is (green -> amber -> red) so the base browns out as
+		// it fills. Falls back to a "ctx NN%" readout when the agent has not yet
+		// spoken, and clears when nothing is known.
+		void UpdateTerminalLabel(string terminal, double? fraction, string message)
+		{
+			if (!islands.TryGetValue(terminal, out var island) || !island.IsInWorld)
+				return;
+
+			var label = island.TraitOrDefault<ClankerLabel>();
+			if (label == null)
+				return;
+
+			var color = fraction == null ? (Color?)null
+				: fraction.Value >= 0.85 ? Color.Red
+				: fraction.Value >= 0.6 ? Color.Yellow
+				: Color.Lime;
+
+			if (!string.IsNullOrEmpty(message))
+				label.Label = Shorten(message, 56);
+			else if (fraction != null)
+				label.Label = $"ctx {(int)Math.Round(Math.Clamp(fraction.Value, 0, 1) * 100)}%";
+			else
+				label.Label = "";
+
+			label.LabelColor = color;
+		}
+
+		static string Shorten(string s, int max)
+		{
+			s = s.Trim();
+			return s.Length <= max ? s : s[..(max - 3)] + "...";
+		}
+
+		// Drives the per-action effects, keyed on the action identity (verb|path)
+		// rather than its ok state: the backend collapses an action's start (ok
+		// null) into its completion before broadcasting, so the unit only ever
+		// reaches the client already completed. When the action changes, the
+		// verb's machine takes the stage; when it has failed, the building
+		// explodes once.
+		void FireActivityEffects(World w, Actor unit, Actor terminal, string id, FileActivity activity)
+		{
+			if (activity == null || !unit.IsInWorld)
+			{
+				agentActionKey.Remove(id);
+				agentExploded.Remove(id);
+				return;
+			}
+
+			var key = $"{activity.Verb}|{activity.Path}";
+			if (!agentActionKey.TryGetValue(id, out var prev) || prev != key)
+			{
+				agentActionKey[id] = key;
+				agentExploded.Remove(id);
+				SpawnVerbMachine(w, unit, terminal, activity.Verb);
+			}
+
+			if (activity.Ok == false && agentExploded.Add(id))
+			{
+				var pos = unit.CenterPosition;
+				w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
+				w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
+			}
+		}
+
+		// Brings a verb-appropriate machine on stage at the action: an engineer
+		// for an edit, a harvester for a build, a tank for a destroy, a scout dog
+		// for a search, and a transport aircraft flown in for an external fetch.
+		void SpawnVerbMachine(World w, Actor unit, Actor terminal, string verb)
+		{
+			switch (verb)
+			{
+				case "edit": SpawnWorkUnit(w, info.EditUnit, unit.Location); break;
+				case "build": SpawnWorkUnit(w, info.BuildUnit, unit.Location); break;
+				case "destroy": SpawnWorkUnit(w, info.DestroyUnit, unit.Location); break;
+				case "search": SpawnWorkUnit(w, info.SearchUnit, unit.Location); break;
+				case "fetch":
+					if (terminal != null && terminal.IsInWorld)
+						SpawnFetchAircraft(w, terminal.CenterPosition);
+					break;
+			}
+		}
+
+		// Spawns a short-lived ground machine near the agent that removes itself
+		// after WorkUnitTicks, so the work reads on the map without piling up.
+		void SpawnWorkUnit(World w, string actorName, CPos near)
+		{
+			if (string.IsNullOrEmpty(actorName))
+				return;
+
+			var cell = FindFreeCell(w, near);
+			if (cell == null)
+				return;
+
+			var unit = w.CreateActor(actorName,
+			[
+				new LocationInit(cell.Value),
+				new OwnerInit(owner),
+			]);
+			unit.QueueActivity(new Wait(info.WorkUnitTicks));
+			unit.QueueActivity(new RemoveSelf());
+		}
+
+		// The first unoccupied in-map cell at or next to `near`, or null if none.
+		CPos? FindFreeCell(World w, CPos near)
+		{
+			CVec[] offsets =
+			[
+				new CVec(0, 0), new CVec(1, 0), new CVec(0, 1),
+				new CVec(-1, 0), new CVec(0, -1), new CVec(1, 1),
+			];
+			foreach (var o in offsets)
+			{
+				var cell = near + o;
+				if (!w.Map.Contains(cell))
+					continue;
+
+				var occupied = false;
+				foreach (var _ in w.ActorMap.GetActorsAt(cell))
+				{
+					occupied = true;
+					break;
+				}
+
+				if (!occupied)
+					return cell;
+			}
+
+			return null;
+		}
+
+		// Flies a transport in from the map edge nearest the terminal, over the
+		// base, then back out and gone -- an external fetch arriving from off-map.
+		void SpawnFetchAircraft(World w, WPos terminalPos)
+		{
+			var unitType = info.FetchAircraft;
+			if (string.IsNullOrEmpty(unitType) || !w.Map.Rules.Actors.ContainsKey(unitType))
+				return;
+
+			var aircraftInfo = w.Map.Rules.Actors[unitType].TraitInfoOrDefault<AircraftInfo>();
+			if (aircraftInfo == null)
+				return;
+
+			var facing = WAngle.Zero;
+			var delta = new WVec(0, -1024, 0).Rotate(WRot.FromYaw(facing));
+			var target = terminalPos + new WVec(0, 0, aircraftInfo.CruiseAltitude.Length);
+			var cordon = WDist.FromCells(3);
+			var startEdge = target - (w.Map.DistanceToEdge(target, -delta) + cordon).Length * delta / 1024;
+			var finishEdge = target + (w.Map.DistanceToEdge(target, delta) + cordon).Length * delta / 1024;
+
+			var plane = w.CreateActor(false, unitType,
+			[
+				new CenterPositionInit(startEdge),
+				new OwnerInit(owner),
+				new FacingInit(facing),
+			]);
+			w.Add(plane);
+			plane.QueueActivity(new Fly(plane, Target.FromPos(target)));
+			plane.QueueActivity(new Fly(plane, Target.FromPos(finishEdge)));
+			plane.QueueActivity(new RemoveSelf());
+		}
+
 		// Places one civilian building per touched file inside the folder's file
-		// strip (the variant is chosen by file extension), and removes buildings for
-		// files that are gone. A hashed slot with linear probing keeps each file put
-		// and stops two buildings landing on the same footprint.
+		// strip (the variant is chosen by the file's role), and removes buildings
+		// for files that are gone. A hashed slot with linear probing keeps each
+		// file put and stops two buildings landing on the same footprint.
 		void ApplyFiles(World w, List<FolderFiles> files)
 		{
 			if (info.FileActors.Length == 0)
@@ -411,7 +630,7 @@ namespace OpenRA.Mods.Clanker.Traits
 						continue; // the file strip is full
 
 					occupied.Add(cells[chosen]);
-					var actorName = info.FileActors[SlotFor(Extension(entry.Name ?? entry.Path), info.FileActors.Length)];
+					var actorName = FileActorForRole(entry.Role);
 					var building = w.CreateActor(actorName,
 					[
 						new LocationInit(cells[chosen]),
@@ -438,8 +657,9 @@ namespace OpenRA.Mods.Clanker.Traits
 			}
 		}
 
-		// The placement slots in a folder's server-reserved file strip. Columns are
-		// stepped by two so the two-wide house sprites do not overlap.
+		// One slot per touched file, laid in a single row along the top of the
+		// strip and stepped three columns apart so the two-wide role buildings
+		// (which stand a full three rows tall) sit side by side with a gap.
 		List<CPos> FileSlotCells(World w, Region region)
 		{
 			var list = new List<CPos>();
@@ -447,25 +667,33 @@ namespace OpenRA.Mods.Clanker.Traits
 				return list;
 
 			var area = region.FileArea;
-			for (var row = 0; row < area.Rows; row++)
-				for (var col = 0; col < area.Cols; col += 2)
-				{
-					var (x, y) = coords.ToCell(area.X + col, area.Y + row);
-					var cell = new CPos(x, y);
-					if (w.Map.Contains(cell))
-						list.Add(cell);
-				}
+			for (var col = 0; col + 1 < area.Cols; col += 3)
+			{
+				var (x, y) = coords.ToCell(area.X + col, area.Y);
+				var cell = new CPos(x, y);
+				if (w.Map.Contains(cell))
+					list.Add(cell);
+			}
 
 			return list;
 		}
 
-		// File extension (lowercased, no dot) used to pick a building variant, or
-		// "" when there is none, so files of the same type share a building.
-		static string Extension(string nameOrPath)
+		// Pick the building for a file by its role, so a folder's makeup reads
+		// from the skyline: a barracks for tests, a power plant for config, a
+		// tech center for a manifest, a radar dome for docs, a silo for build
+		// output, and a small house for ordinary source and everything else.
+		string FileActorForRole(string role)
 		{
-			var name = Basename(nameOrPath);
-			var dot = name.LastIndexOf('.');
-			return dot > 0 ? name[(dot + 1)..].ToLowerInvariant() : "";
+			switch (role)
+			{
+				case "test": return "clanker.file.test";
+				case "config": return "clanker.file.config";
+				case "manifest": return "clanker.file.manifest";
+				case "docs": return "clanker.file.docs";
+				case "build": return "clanker.file.build";
+				case "source": return info.FileActors[0];
+				default: return info.FileActors[Math.Min(1, info.FileActors.Length - 1)];
+			}
 		}
 
 		// Shown over a file's house while it is selected: basename and size.
@@ -511,6 +739,7 @@ namespace OpenRA.Mods.Clanker.Traits
 					{
 						termRef.Recent = snap.Recent ?? new List<string>();
 						termRef.Activity = DescribeActivity(snap.Activity);
+						UpdateTerminalLabel(snap.Terminal, snap.ContextFraction, snap.LastMessage);
 					}
 
 					if (snap.Activity != null && folderRegions.ContainsKey(snap.Activity.Dir))
@@ -556,12 +785,20 @@ namespace OpenRA.Mods.Clanker.Traits
 
 				if (agentTarget[snap.Id] != target)
 				{
-					unit.QueueActivity(false, new Move(unit, target));
+					// IMove works for both the ground agents (Mobile) and the
+					// helicopter agent (Aircraft); the latter flies over folder
+					// walls and hovers at the target.
+					unit.QueueActivity(false, unit.Trait<IMove>().MoveTo(target, 1));
 					agentTarget[snap.Id] = target;
 				}
 
+				Actor termActor = null;
+				if (snap.Terminal != null)
+					islands.TryGetValue(snap.Terminal, out termActor);
+				FireActivityEffects(w, unit, termActor, snap.Id, snap.Activity);
+
 				if (agentLabels.TryGetValue(snap.Id, out var label) && label != null)
-					label.Label = snap.Activity != null ? snap.Activity.Direction.ToUpperInvariant() : "";
+					label.Label = ActivityLabel(snap.Activity);
 			}
 
 			RemoveMissingAgents(live);
@@ -584,6 +821,8 @@ namespace OpenRA.Mods.Clanker.Traits
 				agentHome.Remove(id);
 				agentTarget.Remove(id);
 				agentLabels.Remove(id);
+				agentActionKey.Remove(id);
+				agentExploded.Remove(id);
 			}
 		}
 

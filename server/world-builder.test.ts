@@ -117,6 +117,15 @@ test("empty input yields an empty world", () => {
   expect(buildWorld([], [])).toEqual({ regions: [] });
 });
 
+test("a leaf folder's file strip seats a row of role buildings", () => {
+  const { regions } = buildWorld([term("t1")], ["/p"]);
+  const leaf = byPath(regions).get("/p")!;
+  // Three 2-wide buildings stepped by 3 columns need at least 8 columns; the
+  // strip is 3 rows so a 3-tall building fits.
+  expect(leaf.fileArea.cols).toBeGreaterThanOrEqual(8);
+  expect(leaf.fileArea.rows).toBe(3);
+});
+
 test("output is byte-identical across runs", () => {
   const t = [term("t1")];
   const w = ["/p", "/p/src", "/p/test"];
