@@ -2,7 +2,7 @@ ClankerTerminal@CLANKER_TERMINAL:
 	X: 12
 	Y: WINDOW_HEIGHT - HEIGHT - 12
 	Width: 732
-	Height: 400
+	Height: 620
 	Font: ClankerTerm
 	Padding: 6
 	LineGap: 2
