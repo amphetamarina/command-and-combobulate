@@ -113,9 +113,14 @@ namespace OpenRA.Mods.Clanker.Traits
 		readonly Dictionary<string, CPos> agentHome = new();
 		readonly Dictionary<string, CPos> agentTarget = new();
 		readonly Dictionary<string, ClankerLabel> agentLabels = new();
-		// Last (verb|path|ok) seen per agent, so a completed action fires its
-		// success/failure effect exactly once instead of on every snapshot tick.
-		readonly Dictionary<string, string> agentActivitySig = new();
+		// Current action key (verb|path) per agent: spawn the verb machine once
+		// when this changes. The agent's start state (ok null) is collapsed into
+		// the completion server-side before broadcast, so keying on ok would
+		// never fire -- key on the action identity instead.
+		readonly Dictionary<string, string> agentActionKey = new();
+		// Agents whose current action has already triggered the failure effect,
+		// so a non-zero exit explodes once even as the snapshot keeps arriving.
+		readonly HashSet<string> agentExploded = new();
 		readonly Dictionary<string, string> activeLinks = new();
 		IReadOnlyList<(WPos Start, WPos End, Color Color)> connectors = new List<(WPos, WPos, Color)>();
 
@@ -437,28 +442,34 @@ namespace OpenRA.Mods.Clanker.Traits
 				: Color.Lime;
 		}
 
-		// Fires once per action state-change, keyed on the (verb|path|ok)
-		// signature so it does not re-fire while the same snapshot keeps arriving.
-		// On start (ok unknown) the verb's machine takes the stage; on a failed
-		// completion the building explodes; a successful completion stays silent.
+		// Drives the per-action effects, keyed on the action identity (verb|path)
+		// rather than its ok state: the backend collapses an action's start (ok
+		// null) into its completion before broadcasting, so the unit only ever
+		// reaches the client already completed. When the action changes, the
+		// verb's machine takes the stage; when it has failed, the building
+		// explodes once.
 		void FireActivityEffects(World w, Actor unit, Actor terminal, string id, FileActivity activity)
 		{
-			var sig = activity == null ? "" : $"{activity.Verb}|{activity.Path}|{activity.Ok}";
-			agentActivitySig.TryGetValue(id, out var prev);
-			agentActivitySig[id] = sig;
-
-			if (sig == "" || sig == prev || !unit.IsInWorld)
+			if (activity == null || !unit.IsInWorld)
+			{
+				agentActionKey.Remove(id);
+				agentExploded.Remove(id);
 				return;
+			}
 
-			if (activity.Ok == false)
+			var key = $"{activity.Verb}|{activity.Path}";
+			if (!agentActionKey.TryGetValue(id, out var prev) || prev != key)
+			{
+				agentActionKey[id] = key;
+				agentExploded.Remove(id);
+				SpawnVerbMachine(w, unit, terminal, activity.Verb);
+			}
+
+			if (activity.Ok == false && agentExploded.Add(id))
 			{
 				var pos = unit.CenterPosition;
 				w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
 				w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
-			}
-			else if (activity.Ok == null)
-			{
-				SpawnVerbMachine(w, unit, terminal, activity.Verb);
 			}
 		}
 
@@ -802,7 +813,8 @@ namespace OpenRA.Mods.Clanker.Traits
 				agentHome.Remove(id);
 				agentTarget.Remove(id);
 				agentLabels.Remove(id);
-				agentActivitySig.Remove(id);
+				agentActionKey.Remove(id);
+				agentExploded.Remove(id);
 			}
 		}
 
