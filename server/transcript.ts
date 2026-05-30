@@ -34,18 +34,35 @@ function asString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
 }
 
-export function parseTranscriptLine(line: string): { uses: RawUse[]; results: RawResult[] } {
+// The total context (prompt) size for an assistant turn: the live input plus
+// both cache tiers. Output tokens are the reply, not context, so excluded.
+function usageContextTokens(usage: unknown): number | null {
+  if (!usage || typeof usage !== "object") return null;
+  const u = usage as Record<string, unknown>;
+  let sum = 0;
+  for (const k of ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+    if (typeof u[k] === "number") sum += u[k] as number;
+  }
+  return sum > 0 ? sum : null;
+}
+
+export function parseTranscriptLine(line: string): {
+  uses: RawUse[];
+  results: RawResult[];
+  contextTokens: number | null;
+} {
   const uses: RawUse[] = [];
   const results: RawResult[] = [];
   let entry: Record<string, unknown>;
   try {
     entry = JSON.parse(line) as Record<string, unknown>;
   } catch {
-    return { uses, results };
+    return { uses, results, contextTokens: null };
   }
-  const message = entry.message as { content?: unknown } | undefined;
+  const message = entry.message as { content?: unknown; usage?: unknown } | undefined;
+  const contextTokens = usageContextTokens(message?.usage);
   const content = message?.content;
-  if (!Array.isArray(content)) return { uses, results };
+  if (!Array.isArray(content)) return { uses, results, contextTokens };
 
   const cwd = asString(entry.cwd);
   const tsStr = asString(entry.timestamp);
@@ -68,7 +85,18 @@ export function parseTranscriptLine(line: string): { uses: RawUse[]; results: Ra
       results.push({ id: it.tool_use_id, isError: it.is_error === true });
     }
   }
-  return { uses, results };
+  return { uses, results, contextTokens };
+}
+
+// The most recent context size across a batch of lines, or null if none of them
+// carried usage (so a caller can keep the last known value).
+export function latestContextTokens(lines: string[]): number | null {
+  let last: number | null = null;
+  for (const line of lines) {
+    const { contextTokens } = parseTranscriptLine(line);
+    if (contextTokens !== null) last = contextTokens;
+  }
+  return last;
 }
 
 // Only tools that map to a place on the map produce activity: file tools (they
@@ -127,6 +155,9 @@ export class TranscriptTailer {
   private offset: number;
   private buffer = "";
   private readonly pending = new Map<string, RawUse>();
+  // The latest assistant-turn context size seen, kept across reads so a tick
+  // that appends no usage line still reports the last known value.
+  contextTokens: number | null = null;
 
   constructor(path: string) {
     this.path = path;
@@ -174,6 +205,8 @@ export class TranscriptTailer {
     const complete = this.buffer.slice(0, newlineEnd);
     this.buffer = this.buffer.slice(newlineEnd + 1);
     const lines = complete.split("\n").filter((l) => l.length > 0);
+    const ctx = latestContextTokens(lines);
+    if (ctx !== null) this.contextTokens = ctx;
     return ingestLines(lines, this.pending);
   }
 }

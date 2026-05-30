@@ -38,6 +38,7 @@ const liveClients = new Set<WebSocket>();
 // and pokes us to read. One tailer per session, keyed by terminal id.
 const tailers = new Map<string, { path: string; tailer: TranscriptTailer }>();
 const sessionTool = new Map<string, string>();
+const sessionModel = new Map<string, string>();
 let worldDirty = false;
 
 // Absolute paths to the adapters, injected as CLANKER_PATH (Claude plugin dir,
@@ -65,6 +66,7 @@ type Agent = {
   activity: FileActivity | null;
   activityTs: number;
   recent: string[];
+  contextFraction: number | null;
 };
 const agents = new Map<string, Agent>();
 
@@ -90,6 +92,7 @@ function ensureAgent(session: string, tool: string): Agent {
       activity: null,
       activityTs: 0,
       recent: [],
+      contextFraction: null,
     };
     agents.set(session, a);
   }
@@ -115,6 +118,7 @@ function ensureSubagent(
       activity: null,
       activityTs: 0,
       recent: [],
+      contextFraction: null,
     };
     agents.set(id, a);
   }
@@ -205,16 +209,31 @@ function applyActivity(session: string, act: TranscriptActivity, now: number): v
   }
 }
 
-// Drain a session's transcript tailer, applying any newly appended activity.
+// The agent's context window in tokens, inferred from the model id (e.g.
+// "claude-opus-4-8[1m]" carries a 1M window); a conservative default otherwise.
+function contextWindowFor(model: string | undefined): number {
+  if (model && /\[1m\]/i.test(model)) return 1_000_000;
+  return 200_000;
+}
+
+// Drain a session's transcript tailer, applying any newly appended activity and
+// refreshing the agent's context fill from the latest usage seen.
 function pumpTranscript(session: string): void {
   const entry = tailers.get(session);
   if (!entry) return;
   const now = Date.now();
   for (const act of entry.tailer.readNew()) applyActivity(session, act, now);
+
+  const tokens = entry.tailer.contextTokens;
+  const agent = agents.get(session);
+  if (agent && tokens !== null) {
+    agent.contextFraction = Math.min(1, tokens / contextWindowFor(sessionModel.get(session)));
+  }
 }
 
 function ingest(session: string, tool: string, body: ClaudeHook): void {
   sessionTool.set(session, tool);
+  if (typeof body.model === "string") sessionModel.set(session, body.model);
   registerTranscript(session, body.transcript_path);
   switch (body.hook_event_name) {
     case "SessionStart":
@@ -225,6 +244,7 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
       removeSession(session);
       tailers.delete(session);
       sessionTool.delete(session);
+      sessionModel.delete(session);
       worldDirty = true;
       return;
     case "SubagentStart":
@@ -280,6 +300,7 @@ function agentSnapshots(): AgentSnapshot[] {
     label: a.label,
     activity: a.activity,
     recent: a.recent,
+    contextFraction: a.contextFraction,
   }));
 }
 
@@ -600,6 +621,7 @@ setInterval(() => {
       removeSession(id);
       tailers.delete(id);
       sessionTool.delete(id);
+      sessionModel.delete(id);
       releaseRegion(placements, id);
       worldDirty = true;
     }

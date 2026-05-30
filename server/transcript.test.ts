@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import {
   parseTranscriptLine,
   ingestLines,
+  latestContextTokens,
   type RawUse,
 } from "./transcript.ts";
 
@@ -43,9 +44,36 @@ test("parseTranscriptLine extracts a tool_result from a user entry", () => {
 });
 
 test("parseTranscriptLine ignores non-message and malformed lines", () => {
-  expect(parseTranscriptLine('{"type":"file-history-snapshot"}')).toEqual({ uses: [], results: [] });
-  expect(parseTranscriptLine("not json")).toEqual({ uses: [], results: [] });
-  expect(parseTranscriptLine("")).toEqual({ uses: [], results: [] });
+  const empty = { uses: [], results: [], contextTokens: null };
+  expect(parseTranscriptLine('{"type":"file-history-snapshot"}')).toEqual(empty);
+  expect(parseTranscriptLine("not json")).toEqual(empty);
+  expect(parseTranscriptLine("")).toEqual(empty);
+});
+
+test("parseTranscriptLine sums context tokens from an assistant usage block", () => {
+  const line = JSON.stringify({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "hi" }],
+      usage: {
+        input_tokens: 7848,
+        cache_creation_input_tokens: 3356,
+        cache_read_input_tokens: 16202,
+        output_tokens: 121,
+      },
+    },
+  });
+  // input + cache_creation + cache_read; output excluded.
+  expect(parseTranscriptLine(line).contextTokens).toBe(7848 + 3356 + 16202);
+});
+
+test("latestContextTokens returns the last usage seen, ignoring lines without it", () => {
+  const turn = (input: number) =>
+    JSON.stringify({ type: "assistant", message: { content: [], usage: { input_tokens: input } } });
+  const noUsage = JSON.stringify({ type: "user", message: { content: [] } });
+  expect(latestContextTokens([turn(100), noUsage, turn(250), noUsage])).toBe(250);
+  expect(latestContextTokens([noUsage, noUsage])).toBe(null);
 });
 
 test("ingestLines pairs a failing Bash use with its result -> ok false", () => {

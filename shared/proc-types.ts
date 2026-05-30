@@ -45,6 +45,9 @@ export type AgentSnapshot = {
   label: string; // display label
   activity: FileActivity | null; // the folder it is currently working in
   recent: string[]; // recent human-readable actions, newest first
+  // How full the agent's context window is (0..1), from transcript usage, or
+  // null when unknown. Drives the base "brownout" as the agent fills up.
+  contextFraction: number | null;
 };
 
 // A file an agent has touched, shown as an icon on its folder island.
