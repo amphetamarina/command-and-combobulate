@@ -412,9 +412,9 @@ namespace OpenRA.Mods.Clanker.Traits
 		}
 
 		// Places one civilian building per touched file inside the folder's file
-		// strip (the variant is chosen by file extension), and removes buildings for
-		// files that are gone. A hashed slot with linear probing keeps each file put
-		// and stops two buildings landing on the same footprint.
+		// strip (the variant is chosen by the file's role), and removes buildings
+		// for files that are gone. A hashed slot with linear probing keeps each
+		// file put and stops two buildings landing on the same footprint.
 		void ApplyFiles(World w, List<FolderFiles> files)
 		{
 			if (info.FileActors.Length == 0)
@@ -463,7 +463,7 @@ namespace OpenRA.Mods.Clanker.Traits
 						continue; // the file strip is full
 
 					occupied.Add(cells[chosen]);
-					var actorName = info.FileActors[SlotFor(Extension(entry.Name ?? entry.Path), info.FileActors.Length)];
+					var actorName = FileActorForRole(entry.Role);
 					var building = w.CreateActor(actorName,
 					[
 						new LocationInit(cells[chosen]),
@@ -511,13 +511,25 @@ namespace OpenRA.Mods.Clanker.Traits
 			return list;
 		}
 
-		// File extension (lowercased, no dot) used to pick a building variant, or
-		// "" when there is none, so files of the same type share a building.
-		static string Extension(string nameOrPath)
+		// Pick a building variant by the file's role, so files of the same kind
+		// share a silhouette (all tests alike, all configs alike) instead of
+		// varying by extension hash. Indices map into FileActors; build artifacts
+		// reuse the last variant. Richer, role-iconic buildings (barracks for
+		// tests, a refinery for a manifest) need a wider file strip and are
+		// tracked as a follow-up.
+		string FileActorForRole(string role)
 		{
-			var name = Basename(nameOrPath);
-			var dot = name.LastIndexOf('.');
-			return dot > 0 ? name[(dot + 1)..].ToLowerInvariant() : "";
+			var i = role switch
+			{
+				"source" => 0,
+				"test" => 1,
+				"config" => 2,
+				"manifest" => 3,
+				"docs" => 4,
+				"build" => 5,
+				_ => 6,
+			};
+			return info.FileActors[Math.Min(i, info.FileActors.Length - 1)];
 		}
 
 		// Shown over a file's house while it is selected: basename and size.
