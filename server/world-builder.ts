@@ -6,10 +6,14 @@ import { classifyDir } from "./classify.ts";
 // its child sub-folders in a grid below, padded by PAD and spaced by GAP. The
 // parent expands to contain its children, so subfolders nest inside instead of
 // scattering across the map.
+//
+// FILE_ROWS is 3 so the strip can hold a full-height role building (a 2x3
+// barracks/power plant/etc.), and LEAF_W is wide enough to seat a row of them
+// stepped two-wide-plus-a-gap (the mod places one building per touched file).
 const PAD = 1;
 const FILE_ROWS = 3;
 const GAP = 1;
-const LEAF_W = 4;
+const LEAF_W = 11;
 const TERMINAL_SIZE = 4;
 const REGION_GUTTER = 2;
 
