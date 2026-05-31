@@ -157,7 +157,6 @@ export type IngestConfig = {
   url: string;
   token: string;
   pluginDir: string;
-  opencodePlugin: string;
 };
 
 export class TerminalManager {
@@ -178,7 +177,6 @@ export class TerminalManager {
       CLANKER_INGEST: this.ingest.url,
       CLANKER_TOKEN: this.ingest.token,
       CLANKER_PATH: this.ingest.pluginDir,
-      CLANKER_OPENCODE: this.ingest.opencodePlugin,
     };
     this.terminals.set(
       id,

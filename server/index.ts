@@ -55,18 +55,15 @@ const sessionTool = new Map<string, string>();
 const sessionModel = new Map<string, string>();
 let worldDirty = false;
 
-// Absolute paths to the adapters, injected as CLANKER_PATH (Claude plugin dir,
-// used as `claude --plugin-dir $CLANKER_PATH`) and CLANKER_OPENCODE (the opencode
-// plugin file).
+// Absolute path to the Claude plugin dir, injected as CLANKER_PATH and used as
+// `claude --plugin-dir $CLANKER_PATH`.
 const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
 const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "clanker");
-const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "clanker", "clanker.js");
 
 const terminals = new TerminalManager({
   url: `http://127.0.0.1:${PORT}/ingest`,
   token: INGEST_TOKEN,
   pluginDir: PLUGIN_DIR,
-  opencodePlugin: OPENCODE_PLUGIN,
 });
 
 // One robot's worth of state, built from adapter events rather than /proc.
