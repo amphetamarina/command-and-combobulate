@@ -9,23 +9,9 @@ import { TerminalManager, type TermClient } from "./terminals.ts";
 import { AgentRegistry, subId } from "./agents.ts";
 import { FileRegistry } from "./files.ts";
 import { WorkDirTracker } from "./workdirs.ts";
-import { TranscriptSync, subagentTranscriptPath } from "./transcript-sync.ts";
+import { TranscriptSync } from "./transcript-sync.ts";
+import { Ingest, type ClaudeHook } from "./ingest.ts";
 import type { World } from "../shared/types.ts";
-
-// The hook payload an adapter POSTs to /ingest, shaped like a Claude Code hook
-// event. Each adapter normalises its own format into this before sending.
-type ClaudeHook = {
-  hook_event_name?: string;
-  tool_name?: string;
-  tool_input?: { file_path?: unknown; command?: unknown };
-  tool_response?: unknown;
-  transcript_path?: unknown;
-  agent_transcript_path?: unknown;
-  model?: unknown;
-  agent_id?: unknown;
-  agent_type?: unknown;
-  cwd?: unknown;
-};
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
@@ -38,7 +24,6 @@ const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 const placements = await loadCache(CACHE_PATH);
 const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
-const sessionTool = new Map<string, string>();
 let worldDirty = false;
 
 // Absolute path to the Claude plugin dir, injected as CLANKER_PATH and used as
@@ -55,66 +40,11 @@ const terminals = new TerminalManager({
 const agents = new AgentRegistry();
 const files = new FileRegistry();
 const workDirs = new WorkDirTracker();
-const transcripts = new TranscriptSync(agents, files, workDirs, () => {
+const markWorldDirty = () => {
   worldDirty = true;
-});
-
-function ingest(session: string, tool: string, body: ClaudeHook): void {
-  sessionTool.set(session, tool);
-  if (typeof body.model === "string") transcripts.setModel(session, body.model);
-  transcripts.register(session, body.transcript_path);
-  switch (body.hook_event_name) {
-    case "SessionStart":
-      agents.ensureAgent(session, tool);
-      return;
-    case "SessionEnd":
-    case "Stop":
-      agents.removeSession(session);
-      transcripts.removeForSession(session);
-      sessionTool.delete(session);
-      worldDirty = true;
-      return;
-    case "SubagentStart": {
-      agents.ensureSubagent(
-        session,
-        body.agent_id,
-        tool,
-        typeof body.agent_type === "string" ? body.agent_type : "subagent",
-      );
-      // Tail the subagent's own transcript so its tool calls show on the map.
-      transcripts.register(
-        subId(session, body.agent_id),
-        subagentTranscriptPath(
-          body.agent_transcript_path,
-          body.transcript_path,
-          body.agent_id,
-        ),
-      );
-      return;
-    }
-    case "SubagentStop": {
-      const id = subId(session, body.agent_id);
-      transcripts.pump(id);
-      agents.delete(id);
-      transcripts.delete(id);
-      return;
-    }
-    case "PreToolUse":
-    case "PostToolUse":
-      // The activity itself comes from the transcript, not this payload; the
-      // hook is only a poke to read whatever lines have just landed. Pump the
-      // subagent's transcript when the call came from one, else the main agent.
-      if (body.agent_id) {
-        transcripts.pump(subId(session, body.agent_id));
-      } else {
-        agents.ensureAgent(session, tool);
-        transcripts.pump(session);
-      }
-      return;
-    default:
-      return;
-  }
-}
+};
+const transcripts = new TranscriptSync(agents, files, workDirs, markWorldDirty);
+const sessions = new Ingest(agents, transcripts, markWorldDirty);
 
 async function terminalInfos(): Promise<TerminalInfo[]> {
   return Promise.all(
@@ -202,7 +132,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       );
     }
     if (session) {
-      ingest(session, tool, body);
+      sessions.handle(session, tool, body);
       if (process.env.CLANKER_DEBUG_INGEST) {
         const a = agents.get(session);
         const sub = body.agent_id ? agents.get(subId(session, body.agent_id)) : null;
@@ -435,12 +365,9 @@ setInterval(() => {
   for (const id of [...knownTerminals]) {
     if (!liveTerms.has(id)) {
       knownTerminals.delete(id);
-      removeSession(id);
-      for (const key of [...tailers.keys()]) {
-        if (key === id || key.startsWith(`${id}:sub:`)) tailers.delete(key);
-      }
-      sessionTool.delete(id);
-      sessionModel.delete(id);
+      agents.removeSession(id);
+      transcripts.removeForSession(id);
+      sessions.forgetSession(id);
       releaseRegion(placements, id);
       worldDirty = true;
     }
