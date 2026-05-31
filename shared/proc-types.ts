@@ -41,7 +41,7 @@ export type AgentSnapshot = {
   terminal: string | null; // the terminal island it lives on
   kind: "agent" | "subagent";
   parent: string | null;
-  tool: string; // robot art source: "claude" | "opencode" | ...
+  tool: string; // robot art source: "claude" | "codex"
   label: string; // display label
   activity: FileActivity | null; // the folder it is currently working in
   recent: string[]; // recent human-readable actions, newest first
@@ -63,26 +63,3 @@ export type FileEntry = {
 };
 
 export type FolderFiles = { dir: string; entries: FileEntry[] };
-
-export type FileContent = {
-  path: string;
-  name: string;
-  size: number;
-  content: string;
-  truncated: boolean;
-};
-
-export type LiveMessage =
-  | {
-      kind: "agents";
-      capturedAt: number;
-      agents: AgentSnapshot[];
-    }
-  | {
-      kind: "world-delta";
-      regions: Region[];
-    }
-  | {
-      kind: "files";
-      files: FolderFiles[];
-    };

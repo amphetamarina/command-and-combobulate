@@ -1,9 +1,3 @@
-export type ManifestEntry = {
-  path: string;
-  hash: string;
-  size: number;
-};
-
 // The role of a touched directory, so the map can style its compound by what
 // the directory is for (source base, test barracks, dependency sprawl) rather
 // than only by nesting depth.
