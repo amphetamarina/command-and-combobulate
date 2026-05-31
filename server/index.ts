@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 import { loadCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import { AgentRegistry, subId } from "./agents.ts";
@@ -11,6 +11,7 @@ import { WorkDirTracker } from "./workdirs.ts";
 import { TranscriptSync } from "./transcript-sync.ts";
 import { Ingest, type ClaudeHook } from "./ingest.ts";
 import { WorldService } from "./world-service.ts";
+import { Broadcaster } from "./live.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
@@ -22,7 +23,6 @@ const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
 const knownTerminals = new Set<string>();
-const liveClients = new Set<WebSocket>();
 let worldDirty = false;
 
 // Absolute path to the Claude plugin dir, injected as CLANKER_PATH and used as
@@ -45,31 +45,7 @@ const markWorldDirty = () => {
 const transcripts = new TranscriptSync(agents, files, workDirs, markWorldDirty);
 const sessions = new Ingest(agents, transcripts, markWorldDirty);
 const worldService = new WorldService(terminals, workDirs, placements, CACHE_PATH);
-
-function broadcast(message: string): void {
-  for (const ws of liveClients) {
-    if (ws.readyState === ws.OPEN) ws.send(message);
-  }
-}
-
-function broadcastAgents(): void {
-  broadcast(
-    JSON.stringify({
-      kind: "agents",
-      capturedAt: Date.now(),
-      agents: agents.snapshots(),
-    }),
-  );
-}
-
-function broadcastFiles(): void {
-  broadcast(files.message());
-}
-
-async function broadcastWorld(): Promise<void> {
-  const world = await worldService.build();
-  broadcast(JSON.stringify({ kind: "world-delta", regions: world.regions }));
-}
+const live = new Broadcaster(agents, files, worldService);
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" });
@@ -120,8 +96,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
           `[ingest] -> agent=${target?.id ?? "(none)"} activity=${JSON.stringify(target?.activity ?? null)} workDirs=${workDirs.keys().length}`,
         );
       }
-      broadcastAgents();
-      broadcastFiles();
+      live.agentsChanged();
+      live.filesChanged();
     }
     // Ack immediately; hooks are synchronous and must not block the agent.
     return sendJson(res, 200, {});
@@ -223,27 +199,13 @@ httpServer.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname === "/live") {
     wss.handleUpgrade(req, socket, head, (ws) => {
-      liveClients.add(ws);
+      live.add(ws);
       console.log("[ws] client connected");
       // Snapshot the current world to the new client so it is in sync without
       // waiting for the next change (otherwise islands appear only on reload).
-      if (ws.readyState === ws.OPEN) {
-        ws.send(files.message());
-        ws.send(
-          JSON.stringify({
-            kind: "agents",
-            capturedAt: Date.now(),
-            agents: agents.snapshots(),
-          }),
-        );
-      }
-      void worldService.build().then((w) => {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(JSON.stringify({ kind: "world-delta", regions: w.regions }));
-        }
-      });
+      live.snapshotTo(ws);
       ws.on("close", () => {
-        liveClients.delete(ws);
+        live.remove(ws);
         console.log("[ws] client disconnected");
       });
     });
@@ -320,7 +282,7 @@ httpServer.listen(PORT, () => {
 });
 
 setInterval(() => {
-  if (liveClients.size === 0) return;
+  if (live.size === 0) return;
   const now = Date.now();
 
   // Pull any transcript activity that landed since the last tick (e.g. a
@@ -354,8 +316,8 @@ setInterval(() => {
 
   if (worldDirty) {
     worldDirty = false;
-    void broadcastWorld();
+    void live.worldChanged();
   }
-  broadcastAgents();
-  broadcastFiles();
+  live.agentsChanged();
+  live.filesChanged();
 }, TICK_MS);
