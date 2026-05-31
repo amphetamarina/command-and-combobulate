@@ -9,13 +9,27 @@ import { classifyFile } from "./classify.ts";
 import { TranscriptTailer, type TranscriptActivity } from "./transcript.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
-import { normalizeGrokPayload, type ClaudeHook } from "./grok-normalize.ts";
 import type { World } from "../shared/types.ts";
 import type {
   AgentSnapshot,
   FileActivity,
   FileEntry,
 } from "../shared/proc-types.ts";
+
+// The hook payload an adapter POSTs to /ingest, shaped like a Claude Code hook
+// event. Each adapter normalises its own format into this before sending.
+type ClaudeHook = {
+  hook_event_name?: string;
+  tool_name?: string;
+  tool_input?: { file_path?: unknown; command?: unknown };
+  tool_response?: unknown;
+  transcript_path?: unknown;
+  agent_transcript_path?: unknown;
+  model?: unknown;
+  agent_id?: unknown;
+  agent_type?: unknown;
+  cwd?: unknown;
+};
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
@@ -398,10 +412,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     let body: ClaudeHook = {};
     try {
       const raw = (await readBody(req)) as Record<string, unknown>;
-      body =
-        tool === "grok"
-          ? normalizeGrokPayload(raw)
-          : (raw as unknown as ClaudeHook);
+      body = raw as unknown as ClaudeHook;
     } catch {
       /* ignore malformed */
     }

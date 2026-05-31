@@ -3,8 +3,7 @@
 // inside a Command & Clanker terminal (where CLANKER_SESSION is injected), so this
 // is safe to run once globally. Idempotent.
 //
-//   claude   — a hook in ~/.claude/settings.json (also picked up by Grok, which
-//              reads ~/.claude automatically; the hook tags it "grok" via env).
+//   claude   — a hook in ~/.claude/settings.json.
 //   opencode — a plugin symlinked into ~/.config/opencode/plugin.
 //   codex    — a Claude-compatible plugin added from a local marketplace.
 //   hermes   — a shell hook in ~/.hermes/config.yaml that translates events.
