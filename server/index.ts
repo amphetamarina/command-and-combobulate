@@ -9,6 +9,7 @@ import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import { AgentRegistry, subId, type Agent } from "./agents.ts";
 import { FileRegistry } from "./files.ts";
+import { WorkDirTracker } from "./workdirs.ts";
 import type { World } from "../shared/types.ts";
 
 // The hook payload an adapter POSTs to /ingest, shaped like a Claude Code hook
@@ -28,7 +29,6 @@ type ClaudeHook = {
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
-const WORK_DIR_TTL_MS = 600000;
 const ACTIVITY_TTL_MS = 6000;
 const FILE_MAX_BYTES = 256 * 1024;
 const CACHE_PATH =
@@ -36,7 +36,6 @@ const CACHE_PATH =
 const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
-const workDirLastActive = new Map<string, number>();
 const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 // Agent activity is read from each session's Claude transcript, not from hook
@@ -60,10 +59,10 @@ const terminals = new TerminalManager({
 
 const agents = new AgentRegistry();
 const files = new FileRegistry();
+const workDirs = new WorkDirTracker();
 
 function touchWorkDir(dir: string, now: number): void {
-  if (!workDirLastActive.has(dir)) worldDirty = true;
-  workDirLastActive.set(dir, now);
+  if (workDirs.touch(dir, now)) worldDirty = true;
 }
 
 function registerTranscript(key: string, path: unknown): void {
@@ -193,7 +192,7 @@ async function terminalInfos(): Promise<TerminalInfo[]> {
 
 async function buildWorldFor(): Promise<World> {
   const infos = await terminalInfos();
-  const world = buildWorld(infos, [...workDirLastActive.keys()], placements);
+  const world = buildWorld(infos, workDirs.keys(), placements);
   void saveCache(CACHE_PATH, placements);
   return world;
 }
@@ -269,7 +268,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         const sub = body.agent_id ? agents.get(subId(session, body.agent_id)) : null;
         const target = sub ?? a;
         console.log(
-          `[ingest] -> agent=${target?.id ?? "(none)"} activity=${JSON.stringify(target?.activity ?? null)} workDirs=${workDirLastActive.size}`,
+          `[ingest] -> agent=${target?.id ?? "(none)"} activity=${JSON.stringify(target?.activity ?? null)} workDirs=${workDirs.keys().length}`,
         );
       }
       broadcastAgents();
@@ -479,13 +478,10 @@ setInterval(() => {
   // tool_result that arrived just after its PostToolUse hook poked us).
   for (const session of tailers.keys()) pumpTranscript(session);
 
-  for (const [dir, last] of workDirLastActive) {
-    if (now - last > WORK_DIR_TTL_MS) {
-      workDirLastActive.delete(dir);
-      files.forget(dir);
-      releaseRegion(placements, dir);
-      worldDirty = true;
-    }
+  for (const dir of workDirs.evictIdle(now)) {
+    files.forget(dir);
+    releaseRegion(placements, dir);
+    worldDirty = true;
   }
   agents.expireActivity(now, ACTIVITY_TTL_MS);
 
