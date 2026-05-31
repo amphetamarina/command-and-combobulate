@@ -1,17 +1,16 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile, readlink } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
-import { loadCache, saveCache } from "./persistence.ts";
+import { loadCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import { AgentRegistry, subId } from "./agents.ts";
 import { FileRegistry } from "./files.ts";
 import { WorkDirTracker } from "./workdirs.ts";
 import { TranscriptSync } from "./transcript-sync.ts";
 import { Ingest, type ClaudeHook } from "./ingest.ts";
-import type { World } from "../shared/types.ts";
+import { WorldService } from "./world-service.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
@@ -45,27 +44,7 @@ const markWorldDirty = () => {
 };
 const transcripts = new TranscriptSync(agents, files, workDirs, markWorldDirty);
 const sessions = new Ingest(agents, transcripts, markWorldDirty);
-
-async function terminalInfos(): Promise<TerminalInfo[]> {
-  return Promise.all(
-    terminals.refs().map(async ({ id, pid }) => {
-      let label = id;
-      try {
-        label = await readlink(`/proc/${pid}/cwd`);
-      } catch {
-        /* keep id */
-      }
-      return { id, label };
-    }),
-  );
-}
-
-async function buildWorldFor(): Promise<World> {
-  const infos = await terminalInfos();
-  const world = buildWorld(infos, workDirs.keys(), placements);
-  void saveCache(CACHE_PATH, placements);
-  return world;
-}
+const worldService = new WorldService(terminals, workDirs, placements, CACHE_PATH);
 
 function broadcast(message: string): void {
   for (const ws of liveClients) {
@@ -88,7 +67,7 @@ function broadcastFiles(): void {
 }
 
 async function broadcastWorld(): Promise<void> {
-  const world = await buildWorldFor();
+  const world = await worldService.build();
   broadcast(JSON.stringify({ kind: "world-delta", regions: world.regions }));
 }
 
@@ -222,7 +201,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (pathname === "/world") {
-    const world = await buildWorldFor();
+    const world = await worldService.build();
     console.log(`[world] ${world.regions.length} islands`);
     return sendJson(res, 200, world);
   }
@@ -258,7 +237,7 @@ httpServer.on("upgrade", (req, socket, head) => {
           }),
         );
       }
-      void buildWorldFor().then((w) => {
+      void worldService.build().then((w) => {
         if (ws.readyState === ws.OPEN) {
           ws.send(JSON.stringify({ kind: "world-delta", regions: w.regions }));
         }
@@ -350,7 +329,7 @@ setInterval(() => {
 
   for (const dir of workDirs.evictIdle(now)) {
     files.forget(dir);
-    releaseRegion(placements, dir);
+    worldService.release(dir);
     worldDirty = true;
   }
   agents.expireActivity(now, ACTIVITY_TTL_MS);
@@ -368,7 +347,7 @@ setInterval(() => {
       agents.removeSession(id);
       transcripts.removeForSession(id);
       sessions.forgetSession(id);
-      releaseRegion(placements, id);
+      worldService.release(id);
       worldDirty = true;
     }
   }
