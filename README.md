@@ -29,7 +29,7 @@ It is two pieces:
 ```sh
 mise install        # Bun + Node, pinned in mise.toml
 bun install         # backend deps (compiles node-pty's native PTY)
-bun run setup       # wire the agent adapters (Claude, opencode, Codex, Grok, Hermes)
+bun run setup       # wire the agent adapters (Claude, Codex)
 bun run dev         # start the Node backend — keep this running
 ```
 
@@ -49,7 +49,7 @@ scouts. Build a **Terminal**, select it, click the panel to focus it, and run an
 agent:
 
 ```sh
-claude        # also: opencode, codex, grok, hermes
+claude        # also: codex
 ```
 
 The agent appears as a unit and starts working the map. Scout outward to reveal
@@ -73,7 +73,7 @@ everywhere else.
 - `server/` — the backend (event ingest + PTY hosting).
 - `command-and-clanker/` — the OpenRA mod: SDK scaffold, `mods/clanker/` (yaml,
   art, maps) and `OpenRA.Mods.Clanker/` (C# traits and widgets).
-- `integrations/` — the Claude Code and opencode adapters installed by `bun run setup`.
+- `integrations/` — the Claude and Codex adapters installed by `bun run setup`.
 - `docs/` — design notes.
 
 > The backend runs under **Node** (for `node-pty`); tests run under **Bun**

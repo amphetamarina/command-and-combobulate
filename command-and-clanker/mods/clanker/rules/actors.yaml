@@ -67,17 +67,6 @@ clanker.agent:
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFE066
 
-clanker.agent.opencode:
-	Inherits: APC
-	RenderSprites:
-		Image: apc
-	Mobile:
-		Speed: 170
-	ClankerLabel:
-		Position: Top
-		ValidRelationships: Ally, Neutral, Enemy
-		Color: 66CCFF
-
 clanker.agent.codex:
 	Inherits: ARTY
 	RenderSprites:
@@ -88,17 +77,6 @@ clanker.agent.codex:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FF99CC
-
-clanker.agent.hermes:
-	Inherits: FTRK
-	RenderSprites:
-		Image: ftrk
-	Mobile:
-		Speed: 170
-	ClankerLabel:
-		Position: Top
-		ValidRelationships: Ally, Neutral, Enemy
-		Color: 99FF99
 
 clanker.subagent:
 	Inherits: E1

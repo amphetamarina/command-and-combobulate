@@ -6,7 +6,7 @@ OpenRA engine. The world is event-driven — agents report their tool calls; not
 scrapes `/proc`.
 
 ```
-   Agent (Claude Code, opencode, …) in a Command & Clanker terminal
+   Agent (Claude Code, Codex) in a Command & Clanker terminal
             |  adapter POSTs tool calls / lifecycle events
             v
    Node backend (server/)
@@ -184,7 +184,7 @@ type AgentSnapshot = {
   terminal: string | null;
   kind: "agent" | "subagent";
   parent: string | null;
-  tool: string;            // unit per tool: "claude" | "opencode" | ...
+  tool: string;            // unit per tool: "claude" | "codex"
   label: string;
   activity: { path: string; dir: string; direction: "read" | "write" | "run" } | null;
 };

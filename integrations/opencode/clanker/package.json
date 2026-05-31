@@ -1,9 +1,0 @@
-{
-  "name": "@clanker/opencode-plugin",
-  "version": "0.1.0",
-  "description": "Stream opencode tool calls and subagents to the Command & Clanker map.",
-  "type": "module",
-  "main": "clanker.js",
-  "exports": "./clanker.js",
-  "license": "MIT"
-}

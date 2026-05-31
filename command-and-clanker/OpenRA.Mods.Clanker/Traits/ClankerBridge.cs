@@ -56,16 +56,8 @@ namespace OpenRA.Mods.Clanker.Traits
 		public readonly string AgentActor = "clanker.agent";
 
 		[ActorReference]
-		[Desc("Unit for opencode agents.")]
-		public readonly string OpencodeAgentActor = "clanker.agent.opencode";
-
-		[ActorReference]
 		[Desc("Unit for codex agents.")]
 		public readonly string CodexAgentActor = "clanker.agent.codex";
-
-		[ActorReference]
-		[Desc("Unit for hermes agents.")]
-		public readonly string HermesAgentActor = "clanker.agent.hermes";
 
 		[ActorReference]
 		[Desc("Unit spawned for each subagent.")]
@@ -176,9 +168,7 @@ namespace OpenRA.Mods.Clanker.Traits
 
 			return tool switch
 			{
-				"opencode" => info.OpencodeAgentActor,
 				"codex" => info.CodexAgentActor,
-				"hermes" => info.HermesAgentActor,
 				_ => info.AgentActor,
 			};
 		}

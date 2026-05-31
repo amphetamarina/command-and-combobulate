@@ -9,13 +9,27 @@ import { classifyFile } from "./classify.ts";
 import { TranscriptTailer, type TranscriptActivity } from "./transcript.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
-import { normalizeGrokPayload, type ClaudeHook } from "./grok-normalize.ts";
 import type { World } from "../shared/types.ts";
 import type {
   AgentSnapshot,
   FileActivity,
   FileEntry,
 } from "../shared/proc-types.ts";
+
+// The hook payload an adapter POSTs to /ingest, shaped like a Claude Code hook
+// event. Each adapter normalises its own format into this before sending.
+type ClaudeHook = {
+  hook_event_name?: string;
+  tool_name?: string;
+  tool_input?: { file_path?: unknown; command?: unknown };
+  tool_response?: unknown;
+  transcript_path?: unknown;
+  agent_transcript_path?: unknown;
+  model?: unknown;
+  agent_id?: unknown;
+  agent_type?: unknown;
+  cwd?: unknown;
+};
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
@@ -41,18 +55,15 @@ const sessionTool = new Map<string, string>();
 const sessionModel = new Map<string, string>();
 let worldDirty = false;
 
-// Absolute paths to the adapters, injected as CLANKER_PATH (Claude plugin dir,
-// used as `claude --plugin-dir $CLANKER_PATH`) and CLANKER_OPENCODE (the opencode
-// plugin file).
+// Absolute path to the Claude plugin dir, injected as CLANKER_PATH and used as
+// `claude --plugin-dir $CLANKER_PATH`.
 const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
 const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "clanker");
-const OPENCODE_PLUGIN = resolve(INTEGRATIONS, "opencode", "clanker", "clanker.js");
 
 const terminals = new TerminalManager({
   url: `http://127.0.0.1:${PORT}/ingest`,
   token: INGEST_TOKEN,
   pluginDir: PLUGIN_DIR,
-  opencodePlugin: OPENCODE_PLUGIN,
 });
 
 // One robot's worth of state, built from adapter events rather than /proc.
@@ -398,10 +409,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     let body: ClaudeHook = {};
     try {
       const raw = (await readBody(req)) as Record<string, unknown>;
-      body =
-        tool === "grok"
-          ? normalizeGrokPayload(raw)
-          : (raw as unknown as ClaudeHook);
+      body = raw as unknown as ClaudeHook;
     } catch {
       /* ignore malformed */
     }
