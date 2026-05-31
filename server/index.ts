@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, readlink } from "node:fs/promises";
 import { statSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
@@ -9,12 +9,9 @@ import { classifyFile } from "./classify.ts";
 import { TranscriptTailer, type TranscriptActivity } from "./transcript.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
+import { AgentRegistry, subId, type Agent } from "./agents.ts";
 import type { World } from "../shared/types.ts";
-import type {
-  AgentSnapshot,
-  FileActivity,
-  FileEntry,
-} from "../shared/proc-types.ts";
+import type { FileEntry } from "../shared/proc-types.ts";
 
 // The hook payload an adapter POSTs to /ingest, shaped like a Claude Code hook
 // event. Each adapter normalises its own format into this before sending.
@@ -66,84 +63,7 @@ const terminals = new TerminalManager({
   pluginDir: PLUGIN_DIR,
 });
 
-// One robot's worth of state, built from adapter events rather than /proc.
-type Agent = {
-  id: string;
-  terminal: string;
-  kind: "agent" | "subagent";
-  parent: string | null;
-  tool: string;
-  label: string;
-  activity: FileActivity | null;
-  activityTs: number;
-  recent: string[];
-  contextFraction: number | null;
-  lastMessage: string | null;
-};
-const agents = new Map<string, Agent>();
-
-function pushRecent(a: Agent, line: string): void {
-  a.recent.unshift(line);
-  if (a.recent.length > 12) a.recent.length = 12;
-}
-
-function subId(session: string, agentId: unknown): string {
-  return `${session}:sub:${agentId ?? "anon"}`;
-}
-
-function ensureAgent(session: string, tool: string): Agent {
-  let a = agents.get(session);
-  if (!a) {
-    a = {
-      id: session,
-      terminal: session,
-      kind: "agent",
-      parent: null,
-      tool,
-      label: tool,
-      activity: null,
-      activityTs: 0,
-      recent: [],
-      contextFraction: null,
-      lastMessage: null,
-    };
-    agents.set(session, a);
-  }
-  return a;
-}
-
-function ensureSubagent(
-  session: string,
-  agentId: unknown,
-  tool: string,
-  label: string,
-): Agent {
-  const id = subId(session, agentId);
-  let a = agents.get(id);
-  if (!a) {
-    a = {
-      id,
-      terminal: session,
-      kind: "subagent",
-      parent: session,
-      tool,
-      label,
-      activity: null,
-      activityTs: 0,
-      recent: [],
-      contextFraction: null,
-      lastMessage: null,
-    };
-    agents.set(id, a);
-  }
-  return a;
-}
-
-function removeSession(session: string): void {
-  for (const [id, a] of agents) {
-    if (a.terminal === session) agents.delete(id);
-  }
-}
+const agents = new AgentRegistry();
 
 function touchWorkDir(dir: string, now: number): void {
   if (!workDirLastActive.has(dir)) worldDirty = true;
@@ -203,31 +123,19 @@ function subagentTranscriptPath(body: ClaudeHook): string | null {
   return `${main.slice(0, -".jsonl".length)}/subagents/agent-${String(body.agent_id)}.jsonl`;
 }
 
-// Apply one transcript-derived activity to an agent: drive it to the folder,
-// record the file, and (once the outcome is known) log the action.
+// Apply one transcript-derived activity: the registry mutates the agent, and we
+// perform the side effects it resolves -- drive the work dir and record the file.
 function applyActivity(agent: Agent, act: TranscriptActivity, now: number): void {
-  const dir = act.filePath ? dirname(act.filePath) : act.cwd;
-  if (!dir || !dir.startsWith("/")) return;
-
-  agent.activity = {
-    path: act.filePath ?? dir,
-    dir,
-    direction: act.direction,
-    verb: act.verb,
-    ok: act.ok,
-  };
-  agent.activityTs = now;
-  touchWorkDir(dir, now);
-  if (act.filePath && act.direction !== "run") {
-    recordFile(dir, act.filePath, act.direction === "read" ? "read" : "write", now);
-  }
-  // Log once, at completion (ok resolved), so the start/end pair is one entry.
-  if (act.ok !== null) {
-    if (act.filePath) {
-      pushRecent(agent, `${act.direction === "read" ? "read" : "edit"} ${basename(act.filePath)}`);
-    } else if (act.command) {
-      pushRecent(agent, `run: ${act.command.replace(/\s+/g, " ").slice(0, 60)}`);
-    }
+  const applied = agents.applyActivity(agent, act, now);
+  if (!applied) return;
+  touchWorkDir(applied.dir, now);
+  if (applied.filePath && applied.direction !== "run") {
+    recordFile(
+      applied.dir,
+      applied.filePath,
+      applied.direction === "read" ? "read" : "write",
+      now,
+    );
   }
 }
 
@@ -263,11 +171,11 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
   registerTranscript(session, body.transcript_path);
   switch (body.hook_event_name) {
     case "SessionStart":
-      ensureAgent(session, tool);
+      agents.ensureAgent(session, tool);
       return;
     case "SessionEnd":
     case "Stop":
-      removeSession(session);
+      agents.removeSession(session);
       for (const key of [...tailers.keys()]) {
         if (key === session || key.startsWith(`${session}:sub:`)) tailers.delete(key);
       }
@@ -276,7 +184,7 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
       worldDirty = true;
       return;
     case "SubagentStart": {
-      ensureSubagent(
+      agents.ensureSubagent(
         session,
         body.agent_id,
         tool,
@@ -301,7 +209,7 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
       if (body.agent_id) {
         pumpTranscript(subId(session, body.agent_id));
       } else {
-        ensureAgent(session, tool);
+        agents.ensureAgent(session, tool);
         pumpTranscript(session);
       }
       return;
@@ -331,21 +239,6 @@ async function buildWorldFor(): Promise<World> {
   return world;
 }
 
-function agentSnapshots(): AgentSnapshot[] {
-  return [...agents.values()].map((a) => ({
-    id: a.id,
-    terminal: a.terminal,
-    kind: a.kind,
-    parent: a.parent,
-    tool: a.tool,
-    label: a.label,
-    activity: a.activity,
-    recent: a.recent,
-    contextFraction: a.contextFraction,
-    lastMessage: a.lastMessage,
-  }));
-}
-
 function broadcast(message: string): void {
   for (const ws of liveClients) {
     if (ws.readyState === ws.OPEN) ws.send(message);
@@ -357,7 +250,7 @@ function broadcastAgents(): void {
     JSON.stringify({
       kind: "agents",
       capturedAt: Date.now(),
-      agents: agentSnapshots(),
+      agents: agents.snapshots(),
     }),
   );
 }
@@ -541,7 +434,7 @@ httpServer.on("upgrade", (req, socket, head) => {
           JSON.stringify({
             kind: "agents",
             capturedAt: Date.now(),
-            agents: agentSnapshots(),
+            agents: agents.snapshots(),
           }),
         );
       }
@@ -643,9 +536,7 @@ setInterval(() => {
       worldDirty = true;
     }
   }
-  for (const a of agents.values()) {
-    if (a.activity && now - a.activityTs > ACTIVITY_TTL_MS) a.activity = null;
-  }
+  agents.expireActivity(now, ACTIVITY_TTL_MS);
 
   const liveTerms = new Set(terminals.list());
   for (const id of liveTerms) {
