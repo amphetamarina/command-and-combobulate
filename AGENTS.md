@@ -21,10 +21,9 @@ It ships as two cooperating pieces that talk over WebSocket and HTTP on
   the backend, receives world updates, and renders them through the OpenRA
   engine.
 
-The agent adapters in `integrations/` are the third leg: shims for Claude Code,
-opencode, Codex, Grok, and Hermes that POST tool calls to the backend, but
-only when launched from inside an in-game terminal (detected via the
-`CLANKER_SESSION` env var).
+The agent adapters in `integrations/` are the third leg: shims for Claude Code
+and Codex that POST tool calls to the backend, but only when launched from
+inside an in-game terminal (detected via the `CLANKER_SESSION` env var).
 
 ## Layout
 
