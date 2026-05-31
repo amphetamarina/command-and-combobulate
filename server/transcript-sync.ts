@@ -40,15 +40,25 @@ export function subagentTranscriptPath(
 export class TranscriptSync {
   private tailers = new Map<string, { path: string; tailer: Tailer }>();
   private models = new Map<string, string>();
+  private readonly agents: AgentRegistry;
+  private readonly files: FileRegistry;
+  private readonly workDirs: WorkDirTracker;
+  private readonly markWorldDirty: () => void;
+  private readonly makeTailer: (path: string) => Tailer;
 
   constructor(
-    private readonly agents: AgentRegistry,
-    private readonly files: FileRegistry,
-    private readonly workDirs: WorkDirTracker,
-    private readonly markWorldDirty: () => void,
-    private readonly makeTailer: (path: string) => Tailer = (p) =>
-      new TranscriptTailer(p),
-  ) {}
+    agents: AgentRegistry,
+    files: FileRegistry,
+    workDirs: WorkDirTracker,
+    markWorldDirty: () => void,
+    makeTailer: (path: string) => Tailer = (p) => new TranscriptTailer(p),
+  ) {
+    this.agents = agents;
+    this.files = files;
+    this.workDirs = workDirs;
+    this.markWorldDirty = markWorldDirty;
+    this.makeTailer = makeTailer;
+  }
 
   setModel(session: string, model: string): void {
     this.models.set(session, model);

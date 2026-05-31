@@ -13,12 +13,22 @@ import type { World } from "../shared/types.ts";
 // Builds the spatial world from the live terminals and touched folders, owning
 // the placement cache and persisting it after each build.
 export class WorldService {
+  private readonly terminals: TerminalManager;
+  private readonly workDirs: WorkDirTracker;
+  private readonly placements: PlacementCache;
+  private readonly cachePath: string;
+
   constructor(
-    private readonly terminals: TerminalManager,
-    private readonly workDirs: WorkDirTracker,
-    private readonly placements: PlacementCache,
-    private readonly cachePath: string,
-  ) {}
+    terminals: TerminalManager,
+    workDirs: WorkDirTracker,
+    placements: PlacementCache,
+    cachePath: string,
+  ) {
+    this.terminals = terminals;
+    this.workDirs = workDirs;
+    this.placements = placements;
+    this.cachePath = cachePath;
+  }
 
   private async terminalInfos(): Promise<TerminalInfo[]> {
     return Promise.all(

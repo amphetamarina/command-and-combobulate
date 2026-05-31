@@ -15,12 +15,19 @@ export type LiveClient = {
 // come from the registries and the world service.
 export class Broadcaster {
   private clients = new Set<LiveClient>();
+  private readonly agents: AgentRegistry;
+  private readonly files: FileRegistry;
+  private readonly worldService: WorldService;
 
   constructor(
-    private readonly agents: AgentRegistry,
-    private readonly files: FileRegistry,
-    private readonly worldService: WorldService,
-  ) {}
+    agents: AgentRegistry,
+    files: FileRegistry,
+    worldService: WorldService,
+  ) {
+    this.agents = agents;
+    this.files = files;
+    this.worldService = worldService;
+  }
 
   add(client: LiveClient): void {
     this.clients.add(client);

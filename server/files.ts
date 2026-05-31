@@ -10,8 +10,11 @@ const FILES_PER_DIR = 24;
 export class FileRegistry {
   // dir -> (file path -> entry).
   private filesByDir = new Map<string, Map<string, FileEntry>>();
+  private readonly cap: number;
 
-  constructor(private readonly cap = FILES_PER_DIR) {}
+  constructor(cap = FILES_PER_DIR) {
+    this.cap = cap;
+  }
 
   record(
     dir: string,

@@ -5,8 +5,11 @@ const WORK_DIR_TTL_MS = 600000;
 // the world builder turns into folder islands.
 export class WorkDirTracker {
   private lastActive = new Map<string, number>();
+  private readonly ttlMs: number;
 
-  constructor(private readonly ttlMs = WORK_DIR_TTL_MS) {}
+  constructor(ttlMs = WORK_DIR_TTL_MS) {
+    this.ttlMs = ttlMs;
+  }
 
   // Mark a dir active. Returns true when it was newly tracked, so the caller
   // can flag the world dirty without the tracker reaching for a shared flag.

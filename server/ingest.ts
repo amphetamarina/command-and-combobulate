@@ -21,12 +21,19 @@ export type ClaudeHook = {
 // (on a tool-use poke) drain whichever transcript just advanced.
 export class Ingest {
   private sessionTool = new Map<string, string>();
+  private readonly agents: AgentRegistry;
+  private readonly transcripts: TranscriptSync;
+  private readonly markWorldDirty: () => void;
 
   constructor(
-    private readonly agents: AgentRegistry,
-    private readonly transcripts: TranscriptSync,
-    private readonly markWorldDirty: () => void,
-  ) {}
+    agents: AgentRegistry,
+    transcripts: TranscriptSync,
+    markWorldDirty: () => void,
+  ) {
+    this.agents = agents;
+    this.transcripts = transcripts;
+    this.markWorldDirty = markWorldDirty;
+  }
 
   handle(session: string, tool: string, body: ClaudeHook): void {
     this.sessionTool.set(session, tool);
