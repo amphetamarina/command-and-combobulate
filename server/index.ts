@@ -1,17 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, readlink } from "node:fs/promises";
-import { statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
-import { classifyFile } from "./classify.ts";
 import { TranscriptTailer, type TranscriptActivity } from "./transcript.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import { AgentRegistry, subId, type Agent } from "./agents.ts";
+import { FileRegistry } from "./files.ts";
 import type { World } from "../shared/types.ts";
-import type { FileEntry } from "../shared/proc-types.ts";
 
 // The hook payload an adapter POSTs to /ingest, shaped like a Claude Code hook
 // event. Each adapter normalises its own format into this before sending.
@@ -32,7 +30,6 @@ const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
 const WORK_DIR_TTL_MS = 600000;
 const ACTIVITY_TTL_MS = 6000;
-const FILES_PER_DIR = 24;
 const FILE_MAX_BYTES = 256 * 1024;
 const CACHE_PATH =
   process.env.CLANKER_CACHE ?? join(process.cwd(), ".clanker-cache.json");
@@ -40,8 +37,6 @@ const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
 const workDirLastActive = new Map<string, number>();
-// dir -> (file path -> entry): the files an agent has touched in each folder.
-const filesByDir = new Map<string, Map<string, FileEntry>>();
 const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 // Agent activity is read from each session's Claude transcript, not from hook
@@ -64,48 +59,12 @@ const terminals = new TerminalManager({
 });
 
 const agents = new AgentRegistry();
+const files = new FileRegistry();
 
 function touchWorkDir(dir: string, now: number): void {
   if (!workDirLastActive.has(dir)) worldDirty = true;
   workDirLastActive.set(dir, now);
 }
-
-function recordFile(
-  dir: string,
-  path: string,
-  direction: "read" | "write",
-  now: number,
-): void {
-  let m = filesByDir.get(dir);
-  if (!m) {
-    m = new Map();
-    filesByDir.set(dir, m);
-  }
-  let size = 0;
-  try {
-    size = statSync(path).size;
-  } catch {
-    /* gone or unreadable */
-  }
-  m.set(path, {
-    path,
-    name: basename(path),
-    size,
-    direction,
-    role: classifyFile(path),
-    ts: now,
-  });
-  if (m.size > FILES_PER_DIR) {
-    const oldest = [...m.values()].sort((a, b) => a.ts - b.ts)[0];
-    if (oldest) m.delete(oldest.path);
-  }
-}
-
-function isTrackedFile(path: string): boolean {
-  for (const m of filesByDir.values()) if (m.has(path)) return true;
-  return false;
-}
-
 
 function registerTranscript(key: string, path: unknown): void {
   if (typeof path !== "string" || !path) return;
@@ -130,7 +89,7 @@ function applyActivity(agent: Agent, act: TranscriptActivity, now: number): void
   if (!applied) return;
   touchWorkDir(applied.dir, now);
   if (applied.filePath && applied.direction !== "run") {
-    recordFile(
+    files.record(
       applied.dir,
       applied.filePath,
       applied.direction === "read" ? "read" : "write",
@@ -255,16 +214,8 @@ function broadcastAgents(): void {
   );
 }
 
-function filesMessage(): string {
-  const files = [...filesByDir.entries()].map(([dir, m]) => ({
-    dir,
-    entries: [...m.values()].sort((a, b) => b.ts - a.ts),
-  }));
-  return JSON.stringify({ kind: "files", files });
-}
-
 function broadcastFiles(): void {
-  broadcast(filesMessage());
+  broadcast(files.message());
 }
 
 async function broadcastWorld(): Promise<void> {
@@ -330,7 +281,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (pathname === "/file" && method === "GET") {
     const path = url.searchParams.get("path") ?? "";
-    if (!isTrackedFile(path)) {
+    if (!files.isTracked(path)) {
       return sendJson(res, 404, { error: "not a tracked file" });
     }
     try {
@@ -429,7 +380,7 @@ httpServer.on("upgrade", (req, socket, head) => {
       // Snapshot the current world to the new client so it is in sync without
       // waiting for the next change (otherwise islands appear only on reload).
       if (ws.readyState === ws.OPEN) {
-        ws.send(filesMessage());
+        ws.send(files.message());
         ws.send(
           JSON.stringify({
             kind: "agents",
@@ -531,7 +482,7 @@ setInterval(() => {
   for (const [dir, last] of workDirLastActive) {
     if (now - last > WORK_DIR_TTL_MS) {
       workDirLastActive.delete(dir);
-      filesByDir.delete(dir);
+      files.forget(dir);
       releaseRegion(placements, dir);
       worldDirty = true;
     }
