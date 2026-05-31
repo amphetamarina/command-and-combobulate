@@ -41,8 +41,8 @@ inside an in-game terminal (detected via the `CLANKER_SESSION` env var).
     `fetch-engine.sh` / `make`).
 - `integrations/` — per-agent adapters wired up by `bun run setup`.
 - `scripts/install.ts` — the setup script that installs those adapters.
-- `docs/` — design notes (`architecture.md`, `idea.md`, `v0-spec.md`). Read
-  these for the why behind non-obvious choices.
+- `docs/` — design notes (`architecture.md`). Read these for the why behind
+  non-obvious choices.
 
 ## Runtimes and tooling
 
