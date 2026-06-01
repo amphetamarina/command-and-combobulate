@@ -27,10 +27,22 @@ inside an in-game terminal (detected via the `CLANKER_SESSION` env var).
 
 ## Layout
 
-- `server/` — TypeScript backend. Entry point `index.ts`. Key modules:
-  `terminals.ts` (PTY lifecycle), `world-builder.ts` (event → world state),
-  `persistence.ts` (snapshot/restore). Tests sit next to sources as
-  `*.test.ts`.
+- `server/` — TypeScript backend. `index.ts` is a thin composition root that
+  wires the modules together and runs the tick loop; it holds no domain logic.
+  The rest is split by layer:
+  - Registries own domain state: `agents.ts` (`AgentRegistry`), `files.ts`
+    (`FileRegistry`), `workdirs.ts` (`WorkDirTracker`).
+  - Application services coordinate it: `ingest.ts` (the session-lifecycle
+    state machine over the registries), `transcript-sync.ts` (tailer
+    orchestration), `world-service.ts`, and `live.ts` (`Broadcaster`).
+  - Transport: `http.ts` (route table) and `ws.ts` (`/live`, `/term`,
+    `/termview` upgrades).
+  - Pure helpers: `world-builder.ts` (touched dirs → spatial regions),
+    `classify.ts`, `transcript.ts`.
+  - Infrastructure: `terminals.ts` (PTY lifecycle), `persistence.ts`
+    (snapshot/restore).
+
+  Tests sit next to sources as `*.test.ts`.
 - `shared/` — types shared between the backend and the adapters
   (`proc-types.ts`, `types.ts`).
 - `command-and-clanker/` — the OpenRA mod. Contains an OpenRA SDK scaffold
