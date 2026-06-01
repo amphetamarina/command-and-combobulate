@@ -51,9 +51,9 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("direction")] public string Direction { get; set; }
 		[JsonPropertyName("verb")] public string Verb { get; set; }
 
-		// Null until the action completes (PostToolUse) or when the backend
-		// could not read an exit status; true/false otherwise.
-		[JsonPropertyName("ok")] public bool? Ok { get; set; }
+		// "pending" while the action is still running, then "ok" or "error"
+		// once its result arrives.
+		[JsonPropertyName("outcome")] public string Outcome { get; set; }
 	}
 
 	public class AgentSnapshot

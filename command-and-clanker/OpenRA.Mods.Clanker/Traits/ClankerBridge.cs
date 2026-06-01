@@ -463,7 +463,7 @@ namespace OpenRA.Mods.Clanker.Traits
 				SpawnVerbMachine(w, unit, terminal, activity.Verb);
 			}
 
-			if (activity.Ok == false && agentExploded.Add(id))
+			if (activity.Outcome == "error" && agentExploded.Add(id))
 			{
 				var pos = unit.CenterPosition;
 				w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));

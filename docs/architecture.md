@@ -52,7 +52,7 @@ Two things produce regions on the map:
   command from it (Bash → the shell's cwd). Untouched directories — including
   intermediate ones on the path — do not exist on the map.
 
-Touched dirs are tracked in `workDirLastActive` (`server/index.ts`) and a
+Touched dirs are tracked by the `WorkDirTracker` (`server/workdirs.ts`) and a
 janitor sweep evicts ones idle past a TTL, which drops their regions from the
 next world tick.
 
@@ -84,8 +84,8 @@ the `fileArea` field on `Region`):
   (`ceil(sqrt(children))` columns), separated by `GAP`. The parent's size
   expands to contain them.
 
-Touched files are recorded by `recordFile` (`server/index.ts`) into
-`filesByDir[dir]`, capped at `FILES_PER_DIR` with oldest-evicted-first. Each
+Touched files are recorded by the `FileRegistry` (`server/files.ts`) into a
+per-dir map, capped at `FILES_PER_DIR` with oldest-evicted-first. Each
 entry carries `direction: "read" | "write"`, size, and a timestamp; the mod
 renders them as fog-hidden civilian buildings inside the parent region's
 `fileArea`. Files coming and going never resize the region — only the set of
@@ -118,23 +118,40 @@ A client gets the filesystem view in two streams:
   inside the matching region's `fileArea`.
 
 Agents reference the filesystem through their `activity` field
-(`{ path, dir, direction }`), which is how an agent unit knows which folder
-region to drive to and which file to act on.
+(`{ path, dir, direction, verb, outcome }`), which is how an agent unit knows
+which folder region to drive to, which file to act on, and whether the action
+is pending, succeeded, or failed.
 
 ## Backend (Node)
 
 Runs under Node 22 with `--experimental-strip-types` (executes `.ts` directly);
-tests run under Bun.
+tests run under Bun. `index.ts` is a thin composition root: it constructs the
+modules below, wires them together, and runs the tick loop (transcript pump +
+TTL eviction + terminal sync). It holds no domain logic of its own.
 
-- **Ingest** (`server/index.ts`): normalizes a hook payload into agent/world
-  state. `SessionStart`/`SessionEnd` add and drop an agent per terminal;
-  `SubagentStart`/`SubagentStop` add and drop child agents; `PostToolUse` with a
-  `file_path` points the agent at that file's folder (read vs write), and Bash at
-  the shell's cwd (run). Acks immediately — hooks are synchronous.
+- **Registries** own domain state: `AgentRegistry` (`server/agents.ts`) keeps
+  the agents/subagents and their live activity; `FileRegistry`
+  (`server/files.ts`) keeps the touched files per folder; `WorkDirTracker`
+  (`server/workdirs.ts`) keeps the touched directories and their TTLs.
+- **Ingest** (`server/ingest.ts`): the session-lifecycle state machine over the
+  registries. `parseHook` validates the untrusted `/ingest` payload at the
+  boundary, then `SessionStart`/`SessionEnd` add and drop an agent per terminal,
+  `SubagentStart`/`SubagentStop` add and drop child agents, and `PreToolUse`/
+  `PostToolUse` poke the matching transcript. Acks immediately — hooks are
+  synchronous. The activity itself is read from the transcript, not the payload.
+- **Transcript sync** (`server/transcript-sync.ts`): tails each session's JSONL
+  transcript, turning newly appended tool calls into activities applied to the
+  registries, and derives each agent's context-window fill.
 - **World builder** (`server/world-builder.ts`): a pure function of the live
   terminals and touched folders, producing terminal regions and a nested folder
-  forest. A `PlacementCache` (`server/persistence.ts`, `.clanker-cache.json`)
-  keeps positions stable across restarts.
+  forest. `WorldService` (`server/world-service.ts`) wraps it with the
+  `PlacementCache` (`server/persistence.ts`, `.clanker-cache.json`) that keeps
+  positions stable across restarts.
+- **Broadcaster** (`server/live.ts`): owns the connected `/live` clients and
+  turns registry/world state into the `agents`, `world-delta`, and `files` wire
+  frames.
+- **Transport** (`server/http.ts`, `server/ws.ts`): the HTTP route table and the
+  WebSocket upgrade handlers (`/live`, `/term`, `/termview`).
 - **TerminalManager** (`server/terminals.ts`): a real PTY per session via
   node-pty, with a headless `@xterm/headless` emulator that resolves the PTY's
   cursor moves into a stable screen grid for clients that cannot run a VT parser.
@@ -186,9 +203,22 @@ type AgentSnapshot = {
   parent: string | null;
   tool: string;            // unit per tool: "claude" | "codex"
   label: string;
-  activity: { path: string; dir: string; direction: "read" | "write" | "run" } | null;
+  activity: {
+    path: string;
+    dir: string;
+    direction: "read" | "write" | "run";
+    verb: ActivityVerb;    // read | edit | search | run | build | destroy | ...
+    outcome: "pending" | "ok" | "error";
+  } | null;
+  recent: string[];        // recent human-readable actions, newest first
+  contextFraction: number | null;  // context-window fill, drives the brownout
+  lastMessage: string | null;      // the agent's last prose, shown over its terminal
 };
 ```
+
+These TS wire types live in `shared/proc-types.ts` and `shared/types.ts` and are
+hand-mirrored in the C# mod's `OpenRA.Mods.Clanker/Protocol/LiveMessage.cs`.
+`shared/wire-contract.test.ts` fails the test run if the two ever drift.
 
 ## Determinism
 

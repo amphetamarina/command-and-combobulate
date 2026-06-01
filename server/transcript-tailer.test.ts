@@ -37,7 +37,7 @@ test("a tailer starts at the current end and ignores prior history", () => {
   appendFileSync(path, use("new", "Bash", { command: "make" }) + result("new", false));
   const out = tailer.readNew();
   expect(out.map((a) => a.toolUseId)).toEqual(["new", "new"]);
-  expect(out[1]).toMatchObject({ verb: "build", ok: true });
+  expect(out[1]).toMatchObject({ verb: "build", outcome: "ok" });
 });
 
 test("a tailer missing its file yet starts at offset 0 and reads all", () => {
@@ -45,7 +45,7 @@ test("a tailer missing its file yet starts at offset 0 and reads all", () => {
   writeFileSync(path, use("a", "Read", { file_path: "/p/x.ts" }) + result("a", false));
   const out = tailer.readNew();
   expect(out).toHaveLength(2);
-  expect(out[1]).toMatchObject({ verb: "read", ok: true });
+  expect(out[1]).toMatchObject({ verb: "read", outcome: "ok" });
 });
 
 test("a partial trailing line is buffered until its newline arrives", () => {
@@ -60,7 +60,7 @@ test("a partial trailing line is buffered until its newline arrives", () => {
 
   appendFileSync(path, rest);
   const out = tailer.readNew();
-  expect(out.map((a) => a.ok)).toEqual([null, false]);
+  expect(out.map((a) => a.outcome)).toEqual(["pending", "error"]);
 });
 
 test("a tailer resets to the start when the file shrinks (truncation)", () => {

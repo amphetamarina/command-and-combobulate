@@ -24,14 +24,16 @@ export type FileRole =
   | "build"
   | "other";
 
+// How a tool action resolved: "pending" while it is still running (the tool_use
+// was seen but no result yet), then "ok" or "error" once the result arrives.
+export type Outcome = "pending" | "ok" | "error";
+
 export type FileActivity = {
   path: string;
   dir: string;
   direction: "read" | "write" | "run";
   verb: ActivityVerb;
-  // Whether the completed action succeeded: true/false from a PostToolUse exit
-  // status, null when not yet known (PreToolUse) or absent from the payload.
-  ok: boolean | null;
+  outcome: Outcome;
 };
 
 // One robot on the map: an agent (or one of its subagents) reported by an

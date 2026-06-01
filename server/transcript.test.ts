@@ -112,8 +112,8 @@ test("ingestLines pairs a failing Bash use with its result -> ok false", () => {
   );
   // a start (ok null) then a completion (ok false)
   expect(out).toHaveLength(2);
-  expect(out[0]).toMatchObject({ toolUseId: "tu1", verb: "run", direction: "run", ok: null });
-  expect(out[1]).toMatchObject({ toolUseId: "tu1", verb: "run", direction: "run", ok: false, command: "ls ./non-existent" });
+  expect(out[0]).toMatchObject({ toolUseId: "tu1", verb: "run", direction: "run", outcome: "pending" });
+  expect(out[1]).toMatchObject({ toolUseId: "tu1", verb: "run", direction: "run", outcome: "error", command: "ls ./non-existent" });
   expect(pending.size).toBe(0);
 });
 
@@ -124,7 +124,7 @@ test("ingestLines treats a piped test command that exits 0 as ok true", () => {
     [asstUse("t", "Bash", { command: "bun test 2>&1 | tail -40" }), userResult("t", false)],
     new Map(),
   );
-  expect(out[1]).toMatchObject({ ok: true, verb: "run" });
+  expect(out[1]).toMatchObject({ outcome: "ok", verb: "run" });
 });
 
 test("ingestLines maps a Read use to a read activity with its file path", () => {
@@ -137,7 +137,7 @@ test("ingestLines maps a Read use to a read activity with its file path", () => 
     verb: "read",
     direction: "read",
     filePath: "/p/server.js",
-    ok: true,
+    outcome: "ok",
   });
 });
 
@@ -146,19 +146,19 @@ test("ingestLines maps a Write use to an edit activity", () => {
     [asstUse("w", "Write", { file_path: "/p/x.cs", content: "..." }), userResult("w", false)],
     new Map(),
   );
-  expect(out[1]).toMatchObject({ verb: "edit", direction: "write", filePath: "/p/x.cs", ok: true });
+  expect(out[1]).toMatchObject({ verb: "edit", direction: "write", filePath: "/p/x.cs", outcome: "ok" });
 });
 
 test("ingestLines correlates a use and result split across calls", () => {
   const pending = new Map<string, RawUse>();
   const first = ingestLines([asstUse("tu1", "Bash", { command: "make" })], pending);
   expect(first).toHaveLength(1);
-  expect(first[0]).toMatchObject({ verb: "build", ok: null });
+  expect(first[0]).toMatchObject({ verb: "build", outcome: "pending" });
   expect(pending.size).toBe(1);
 
   const second = ingestLines([userResult("tu1", false)], pending);
   expect(second).toHaveLength(1);
-  expect(second[0]).toMatchObject({ toolUseId: "tu1", verb: "build", ok: true });
+  expect(second[0]).toMatchObject({ toolUseId: "tu1", verb: "build", outcome: "ok" });
   expect(pending.size).toBe(0);
 });
 
