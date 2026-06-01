@@ -6,7 +6,7 @@ conventions an agent needs to make changes safely.
 
 ## What this repo is
 
-Command & Clanker visualises an AI agent's tool calls as an
+Command & Combobulate visualises an AI agent's tool calls as an
 [OpenRA](https://www.openra.net) real-time strategy game. The agent's terminal
 is a building, files are smaller buildings inside folder compounds, and every
 read/write/run shows up as a unit moving on the map.
@@ -17,13 +17,13 @@ It ships as two cooperating pieces that talk over WebSocket and HTTP on
 - **`server/`** — a Node backend. Hosts real PTYs via `node-pty`, ingests tool
   events posted by the agent adapters, builds a world model, and streams it to
   connected game clients.
-- **`command-and-clanker/`** — an OpenRA Mod SDK mod. A C# client connects to
+- **`command-and-combobulate/`** — an OpenRA Mod SDK mod. A C# client connects to
   the backend, receives world updates, and renders them through the OpenRA
   engine.
 
 The agent adapters in `integrations/` are the third leg: shims for Claude Code
 and Codex that POST tool calls to the backend, but only when launched from
-inside an in-game terminal (detected via the `CLANKER_SESSION` env var).
+inside an in-game terminal (detected via the `COMBOBULATE_SESSION` env var).
 
 ## Layout
 
@@ -45,10 +45,10 @@ inside an in-game terminal (detected via the `CLANKER_SESSION` env var).
   Tests sit next to sources as `*.test.ts`.
 - `shared/` — types shared between the backend and the adapters
   (`proc-types.ts`, `types.ts`).
-- `command-and-clanker/` — the OpenRA mod. Contains an OpenRA SDK scaffold
+- `command-and-combobulate/` — the OpenRA mod. Contains an OpenRA SDK scaffold
   plus:
-  - `mods/clanker/` — yaml rules, art, maps, and other mod data.
-  - `OpenRA.Mods.Clanker/` — C# traits and widgets specific to this mod.
+  - `mods/combobulate/` — yaml rules, art, maps, and other mod data.
+  - `OpenRA.Mods.Combobulate/` — C# traits and widgets specific to this mod.
   - `engine/` — fetched OpenRA engine (not checked in; populated by
     `fetch-engine.sh` / `make`).
 - `integrations/` — per-agent adapters wired up by `bun run setup`.
@@ -70,7 +70,7 @@ The split between Node and Bun is deliberate and load-bearing:
 - TypeScript is executed via Node's `--experimental-strip-types`; there is no
   separate build step for the backend. `bun run typecheck` runs `tsc --noEmit`.
 - The OpenRA mod builds with .NET 8 (or Mono) via `make` inside
-  `command-and-clanker/`. The first build fetches and compiles the pinned
+  `command-and-combobulate/`. The first build fetches and compiles the pinned
   engine and takes several minutes.
 - `mise.toml` pins Bun and Node versions.
 
@@ -86,7 +86,7 @@ Run from the repo root unless noted:
 - `bun test` — run all `*.test.ts` files.
 - `bun run game` — build the mod and launch the game (also starts a backend).
 
-Mod-only flow (from `command-and-clanker/`):
+Mod-only flow (from `command-and-combobulate/`):
 
 - `make` — fetch the engine on first run, then build the mod.
 - `./launch-game.sh` / `./launch-dedicated.sh` — launch the game / a dedicated
@@ -102,12 +102,12 @@ Mod-only flow (from `command-and-clanker/`):
   is the canonical example: events in, world state out, no I/O.
 - Co-locate tests with the code they cover (`foo.ts` + `foo.test.ts`).
 - The OpenRA mod follows OpenRA's own conventions for yaml rules and C#
-  traits. When in doubt, mirror an existing trait in `OpenRA.Mods.Clanker/`
-  or an existing rule in `mods/clanker/`.
-- Mod assets (sprites, palettes, maps) live under `mods/clanker/`. Generated
-  files under `command-and-clanker/engine/` and `bin/` are not checked in.
-- Adapters in `integrations/` must stay silent outside a Command & Clanker
-  session — gate all reporting on `CLANKER_SESSION`.
+  traits. When in doubt, mirror an existing trait in `OpenRA.Mods.Combobulate/`
+  or an existing rule in `mods/combobulate/`.
+- Mod assets (sprites, palettes, maps) live under `mods/combobulate/`. Generated
+  files under `command-and-combobulate/engine/` and `bin/` are not checked in.
+- Adapters in `integrations/` must stay silent outside a Command & Combobulate
+  session — gate all reporting on `COMBOBULATE_SESSION`.
 
 ## Engineering standards
 
@@ -125,8 +125,8 @@ Mod-only flow (from `command-and-clanker/`):
 
 ## Things to avoid
 
-- Do not commit anything under `command-and-clanker/engine/`,
-  `command-and-clanker/bin/`, or `.clanker-cache.json` — these are
+- Do not commit anything under `command-and-combobulate/engine/`,
+  `command-and-combobulate/bin/`, or `.combobulate-cache.json` — these are
   build/runtime artefacts.
 - Do not switch the backend off Node, or the test runner off Bun.
 - Do not add comments that restate what the code does; follow the

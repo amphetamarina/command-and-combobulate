@@ -1,5 +1,5 @@
 {
-  "name": "command-and-clanker",
+  "name": "command-and-combobulate",
   "version": "0.0.4",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning --watch server/index.ts",
     "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts",
     "setup": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/install.ts",
-    "game": "cd command-and-clanker && make && ./launch-game.sh",
+    "game": "cd command-and-combobulate && make && ./launch-game.sh",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
