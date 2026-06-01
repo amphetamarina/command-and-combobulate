@@ -1,5 +1,5 @@
 # Command & Combobulate
-<img width="512" height="256" alt="combobulate-loadscreen" src="https://github.com/user-attachments/assets/61281ddd-34d0-4cf6-9692-9d8deeaeb24f" />
+<img width="512" height="256" alt="Command & Combobulate" src="assets/loadscreen.png" />
 
 <video width="1280" height="720" src="assets/demo002.mp4" controls></video>
 
