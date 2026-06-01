@@ -1,5 +1,5 @@
 import { openSync, readSync, closeSync, statSync } from "node:fs";
-import type { ActivityVerb } from "../shared/proc-types.ts";
+import type { ActivityVerb, Outcome } from "../shared/proc-types.ts";
 import { classifyVerb } from "./classify.ts";
 
 // A tool invocation read from an assistant entry, before its result is known.
@@ -15,8 +15,8 @@ export type RawUse = {
 export type RawResult = { id: string; isError: boolean };
 
 // A normalized, placeable activity derived from the transcript. Emitted twice
-// per tool: once when the tool_use is seen (ok null, the agent starts working)
-// and once when its tool_result arrives (ok set from is_error).
+// per tool: once when the tool_use is seen (outcome "pending", the agent starts
+// working) and once when its tool_result arrives (outcome set from is_error).
 export type TranscriptActivity = {
   toolUseId: string;
   tool: string;
@@ -25,7 +25,7 @@ export type TranscriptActivity = {
   cwd: string | null;
   verb: ActivityVerb;
   direction: "read" | "write" | "run";
-  ok: boolean | null;
+  outcome: Outcome;
   ts: number;
   isSidechain: boolean;
 };
@@ -124,7 +124,7 @@ function placeable(use: RawUse): boolean {
   return typeof use.input.file_path === "string" || CWD_TOOLS.has(use.name);
 }
 
-export function useToActivity(use: RawUse, ok: boolean | null): TranscriptActivity {
+export function useToActivity(use: RawUse, outcome: Outcome): TranscriptActivity {
   const filePath = asString(use.input.file_path);
   const command = asString(use.input.command);
   const direction: "read" | "write" | "run" =
@@ -137,7 +137,7 @@ export function useToActivity(use: RawUse, ok: boolean | null): TranscriptActivi
     cwd: use.cwd,
     verb: classifyVerb(use.name, command ?? ""),
     direction,
-    ok,
+    outcome,
     ts: use.ts,
     isSidechain: use.isSidechain,
   };
@@ -152,13 +152,13 @@ export function ingestLines(lines: string[], pending: Map<string, RawUse>): Tran
     for (const use of uses) {
       if (!placeable(use)) continue;
       pending.set(use.id, use);
-      out.push(useToActivity(use, null));
+      out.push(useToActivity(use, "pending"));
     }
     for (const result of results) {
       const use = pending.get(result.id);
       if (!use) continue;
       pending.delete(result.id);
-      out.push(useToActivity(use, !result.isError));
+      out.push(useToActivity(use, result.isError ? "error" : "ok"));
     }
   }
   return out;

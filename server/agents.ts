@@ -133,11 +133,11 @@ export class AgentRegistry {
       dir,
       direction: act.direction,
       verb: act.verb,
-      ok: act.ok,
+      outcome: act.outcome,
     };
     agent.activityTs = now;
-    // Log once, at completion (ok resolved), so the start/end pair is one entry.
-    if (act.ok !== null) {
+    // Log once, at completion (outcome resolved), so the start/end pair is one entry.
+    if (act.outcome !== "pending") {
       if (act.filePath) {
         pushRecent(
           agent,

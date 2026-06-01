@@ -11,7 +11,7 @@ function activity(over: Partial<TranscriptActivity> = {}): TranscriptActivity {
     cwd: "/repo",
     verb: "read",
     direction: "read",
-    ok: true,
+    outcome: "ok",
     ts: 1000,
     isSidechain: false,
     ...over,
@@ -107,7 +107,7 @@ describe("applyActivity", () => {
       dir: "/repo/src",
       direction: "read",
       verb: "read",
-      ok: true,
+      outcome: "ok",
     });
     expect(a.activityTs).toBe(5000);
   });
@@ -141,10 +141,10 @@ describe("applyActivity", () => {
     const reg = new AgentRegistry();
     const a = reg.ensureAgent("t1", "claude");
 
-    reg.applyActivity(a, activity({ ok: null }), 5000);
+    reg.applyActivity(a, activity({ outcome: "pending" }), 5000);
     expect(a.recent).toEqual([]);
 
-    reg.applyActivity(a, activity({ ok: true }), 5001);
+    reg.applyActivity(a, activity({ outcome: "ok" }), 5001);
     expect(a.recent).toEqual(["read index.ts"]);
   });
 
@@ -154,12 +154,12 @@ describe("applyActivity", () => {
 
     reg.applyActivity(
       a,
-      activity({ filePath: "/repo/src/a.ts", direction: "write", verb: "edit", ok: true }),
+      activity({ filePath: "/repo/src/a.ts", direction: "write", verb: "edit", outcome: "ok" }),
       1,
     );
     reg.applyActivity(
       a,
-      activity({ filePath: null, command: "bun test", direction: "run", verb: "run", ok: true }),
+      activity({ filePath: null, command: "bun test", direction: "run", verb: "run", outcome: "ok" }),
       2,
     );
 
@@ -173,7 +173,7 @@ describe("applyActivity", () => {
     for (let i = 0; i < 20; i++) {
       reg.applyActivity(
         a,
-        activity({ filePath: `/repo/f${i}.ts`, direction: "read", ok: true }),
+        activity({ filePath: `/repo/f${i}.ts`, direction: "read", outcome: "ok" }),
         i,
       );
     }
@@ -187,8 +187,8 @@ describe("expireActivity", () => {
     const reg = new AgentRegistry();
     const stale = reg.ensureAgent("t1", "claude");
     const fresh = reg.ensureAgent("t2", "claude");
-    reg.applyActivity(stale, activity({ ok: true }), 1000);
-    reg.applyActivity(fresh, activity({ ok: true }), 9000);
+    reg.applyActivity(stale, activity({ outcome: "ok" }), 1000);
+    reg.applyActivity(fresh, activity({ outcome: "ok" }), 9000);
 
     reg.expireActivity(10000, 6000);
 

@@ -19,7 +19,7 @@ function activity(over: Partial<TranscriptActivity> = {}): TranscriptActivity {
     cwd: "/repo",
     verb: "read",
     direction: "read",
-    ok: true,
+    outcome: "ok",
     ts: 1000,
     isSidechain: false,
     ...over,
