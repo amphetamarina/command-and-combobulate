@@ -882,12 +882,20 @@ namespace OpenRA.Mods.Combobulate.Traits
 		{
 			var list = new List<(WPos, WPos, Color)>();
 
-			// Parent -> child folder edges (the directory tree).
+			// Parent -> child folder edges, routed as right angles so the nesting
+			// reads like a `tree` listing: a horizontal bus dropped from under the
+			// parent's file strip, with a vertical branch down into each child.
 			foreach (var kv in folderRegions)
 			{
 				var parent = ParentOf(kv.Key);
-				if (parent != null && folderRegions.TryGetValue(parent, out var pr))
-					list.Add((FolderCenter(w, pr), FolderCenter(w, kv.Value), Color.Gray));
+				if (parent == null || !folderRegions.TryGetValue(parent, out var pr))
+					continue;
+
+				var bus = FolderBranchPoint(w, pr);
+				var top = FolderTop(w, kv.Value);
+				var corner = new WPos(top.X, bus.Y, bus.Z);
+				list.Add((bus, corner, Color.Gray));
+				list.Add((corner, top, Color.Gray));
 			}
 
 			// Terminal -> the folder its agent is working in right now.
@@ -920,6 +928,21 @@ namespace OpenRA.Mods.Combobulate.Traits
 		{
 			var (ox, oy) = coords.RegionOrigin(region);
 			return w.Map.CenterOfCell(new CPos(ox + (region.Size.W / 2), oy + (region.Size.H / 2)));
+		}
+
+		// The trunk root: bottom-centre of the parent's own file strip, which is
+		// exactly the boundary the server keeps clear above its child sub-islands.
+		WPos FolderBranchPoint(World w, Region region)
+		{
+			var fa = region.FileArea;
+			var (x, y) = coords.ToCell(fa.X + (fa.Cols / 2), fa.Y + fa.Rows);
+			return w.Map.CenterOfCell(new CPos(x, y));
+		}
+
+		WPos FolderTop(World w, Region region)
+		{
+			var (ox, oy) = coords.RegionOrigin(region);
+			return w.Map.CenterOfCell(new CPos(ox + (region.Size.W / 2), oy));
 		}
 
 		IEnumerable<IRenderable> IRenderAnnotations.RenderAnnotations(Actor self, WorldRenderer wr)
