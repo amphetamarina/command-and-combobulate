@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -126,6 +127,22 @@ namespace OpenRA.Mods.Clanker.Traits
 
 		// The id of the terminal currently mirrored, or null when none is selected.
 		public string StreamedTerminal => streamedId;
+
+		// Sentinel BoundTerminal value: the panel targets every terminal at once
+		// (composer input broadcasts; no single grid is streamed).
+		public const string AllTerminals = "*";
+
+		string boundId;
+
+		// What the terminal panel currently targets: a concrete terminal id, the
+		// AllTerminals sentinel, or null/empty when the panel is dismissed. Drives
+		// the streamed grid and where the composer sends.
+		public string BoundTerminal => boundId;
+
+		// A stable, natural-sorted snapshot of the live terminal ids (t1, t2, ...,
+		// t10), read on the game thread; the panel's toggle cycles through these.
+		public IReadOnlyList<string> TerminalIds =>
+			islands.Keys.OrderBy(k => k.Length).ThenBy(k => k, StringComparer.Ordinal).ToList();
 
 		World world;
 		Player owner;
@@ -932,6 +949,41 @@ namespace OpenRA.Mods.Clanker.Traits
 			var token = termCts.Token;
 			var url = info.HttpUrl.Replace("http", "ws") + "/termview?id=" + id;
 			Task.Run(() => RunTermStream(url, token));
+		}
+
+		// Point the panel at a terminal id, the AllTerminals sentinel, or null to
+		// dismiss it. A concrete id streams that terminal's grid; All and null stop
+		// the grid stream (the widget paints a placeholder / the panel hides).
+		public void SetBoundTerminal(string id)
+		{
+			boundId = id;
+			SetStreamedTerminal(string.IsNullOrEmpty(id) || id == AllTerminals ? null : id);
+		}
+
+		// Advance the panel through the live terminals and then the All view,
+		// wrapping around; a dismissed or unknown binding cycles to the first one.
+		public void CycleBoundTerminal()
+		{
+			var options = new List<string>(TerminalIds) { AllTerminals };
+			var next = (options.IndexOf(boundId) + 1) % options.Count;
+			SetBoundTerminal(options[next]);
+		}
+
+		// Send a composed line to the bound agent(s) via the backend's /agent/ask
+		// endpoint (which appends the submitting carriage return). In All mode the
+		// line is broadcast to every terminal.
+		public void SendComposed(string text)
+		{
+			if (string.IsNullOrEmpty(text))
+				return;
+
+			if (boundId == AllTerminals)
+			{
+				foreach (var id in TerminalIds)
+					ClankerBackend.Post("/agent/ask", new { terminal = id, text });
+			}
+			else if (!string.IsNullOrEmpty(boundId))
+				ClankerBackend.Post("/agent/ask", new { terminal = boundId, text });
 		}
 
 		// Queue raw keystrokes for the selected terminal's PTY (e.g. "\r", "\x03").
