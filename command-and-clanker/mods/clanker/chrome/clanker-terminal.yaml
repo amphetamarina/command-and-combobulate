@@ -1,8 +1,42 @@
-ClankerTerminal@CLANKER_TERMINAL:
+Container@CLANKER_TERMINAL:
+	Logic: ClankerTerminalLogic
 	X: 12
 	Y: WINDOW_HEIGHT - HEIGHT - 12
 	Width: 732
 	Height: 620
-	Font: ClankerTerm
-	Padding: 6
-	LineGap: 2
+	Children:
+		Background@PANEL:
+			Width: PARENT_WIDTH
+			Height: PARENT_HEIGHT
+			Background: dialog
+			Children:
+				ClankerTerminal@GRID:
+					X: 9
+					Y: 9
+					Width: PARENT_WIDTH - 18
+					Height: PARENT_HEIGHT - 52
+					Font: ClankerTerm
+					Padding: 6
+					LineGap: 2
+				Button@TERM_MODE:
+					X: 9
+					Y: PARENT_HEIGHT - 34
+					Width: 50
+					Height: 25
+					Font: Bold
+				TextField@TERM_COMPOSER:
+					X: 64
+					Y: PARENT_HEIGHT - 34
+					Width: PARENT_WIDTH - 103
+					Height: 25
+				Button@TERM_CLOSE:
+					X: PARENT_WIDTH - 33
+					Y: PARENT_HEIGHT - 34
+					Width: 24
+					Height: 25
+					Children:
+						Image:
+							ImageCollection: lobby-bits
+							ImageName: kick
+							X: 6
+							Y: 7
