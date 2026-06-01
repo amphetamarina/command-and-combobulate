@@ -8,7 +8,7 @@ import type { WorkDirTracker } from "./workdirs.ts";
 import type { TerminalManager } from "./terminals.ts";
 import type { WorldService } from "./world-service.ts";
 import type { Broadcaster } from "./live.ts";
-import type { Ingest } from "./ingest.ts";
+import { parseHook, type ClaudeHook, type Ingest } from "./ingest.ts";
 
 const FILE_MAX_BYTES = 256 * 1024;
 
@@ -59,9 +59,9 @@ export function createHttpHandler(deps: HttpDeps) {
       }
       const session = String(req.headers["x-clanker-session"] ?? "");
       const tool = String(req.headers["x-clanker-tool"] ?? "claude");
-      let body: Parameters<Ingest["handle"]>[2] = {};
+      let body: ClaudeHook = {};
       try {
-        body = (await readBody(req)) as Parameters<Ingest["handle"]>[2];
+        body = parseHook(await readBody(req)) ?? {};
       } catch {
         /* ignore malformed */
       }

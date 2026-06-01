@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test";
-import { Ingest, type ClaudeHook } from "./ingest.ts";
+import { Ingest, parseHook, type ClaudeHook } from "./ingest.ts";
 import { AgentRegistry } from "./agents.ts";
 import { FileRegistry } from "./files.ts";
 import { WorkDirTracker } from "./workdirs.ts";
@@ -97,5 +97,60 @@ describe("Ingest session lifecycle", () => {
   test("forgetSession is safe to call for an unknown session", () => {
     const { ingest } = harness();
     expect(() => ingest.forgetSession("nope")).not.toThrow();
+  });
+});
+
+describe("parseHook", () => {
+  test("rejects a payload that is not a plain object", () => {
+    expect(parseHook(null)).toBeNull();
+    expect(parseHook("PostToolUse")).toBeNull();
+    expect(parseHook(42)).toBeNull();
+    expect(parseHook(["PostToolUse"])).toBeNull();
+  });
+
+  test("keeps every well-typed field from a full payload", () => {
+    const hook = parseHook({
+      hook_event_name: "PostToolUse",
+      tool_name: "Read",
+      agent_id: "abc",
+      agent_type: "explorer",
+      transcript_path: "/main.jsonl",
+      agent_transcript_path: "/sub.jsonl",
+      model: "claude-opus-4-8",
+      cwd: "/repo",
+    });
+    expect(hook).toEqual({
+      hook_event_name: "PostToolUse",
+      tool_name: "Read",
+      agent_id: "abc",
+      agent_type: "explorer",
+      transcript_path: "/main.jsonl",
+      agent_transcript_path: "/sub.jsonl",
+      model: "claude-opus-4-8",
+      cwd: "/repo",
+    });
+  });
+
+  test("accepts a partial payload, keeping only the fields present", () => {
+    expect(parseHook({ hook_event_name: "SessionStart" })).toEqual({
+      hook_event_name: "SessionStart",
+    });
+    expect(parseHook({})).toEqual({});
+  });
+
+  test("drops wrong-typed fields instead of forwarding them to the domain", () => {
+    expect(
+      parseHook({
+        hook_event_name: 123,
+        transcript_path: { p: 1 },
+        model: null,
+        agent_id: { nested: true },
+      }),
+    ).toEqual({});
+  });
+
+  test("accepts a numeric agent_id but drops a structured one", () => {
+    expect(parseHook({ agent_id: 7 })?.agent_id).toBe(7);
+    expect(parseHook({ agent_id: ["x"] })?.agent_id).toBeUndefined();
   });
 });

@@ -8,13 +8,41 @@ export type ClaudeHook = {
   tool_name?: string;
   tool_input?: { file_path?: unknown; command?: unknown };
   tool_response?: unknown;
-  transcript_path?: unknown;
-  agent_transcript_path?: unknown;
-  model?: unknown;
-  agent_id?: unknown;
-  agent_type?: unknown;
-  cwd?: unknown;
+  transcript_path?: string;
+  agent_transcript_path?: string;
+  model?: string;
+  agent_id?: string | number;
+  agent_type?: string;
+  cwd?: string;
 };
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+// Narrow an untrusted /ingest body to a ClaudeHook, keeping only well-typed
+// fields and dropping the rest. Returns null when the payload is not even an
+// object, so the handler can ignore it. Malformed-but-object payloads are
+// coerced rather than rejected, preserving the "ack and ignore junk" contract.
+export function parseHook(raw: unknown): ClaudeHook | null {
+  if (!isPlainObject(raw)) return null;
+  const hook: ClaudeHook = {};
+  if (typeof raw.hook_event_name === "string") hook.hook_event_name = raw.hook_event_name;
+  if (typeof raw.tool_name === "string") hook.tool_name = raw.tool_name;
+  if (isPlainObject(raw.tool_input)) hook.tool_input = raw.tool_input;
+  if ("tool_response" in raw) hook.tool_response = raw.tool_response;
+  if (typeof raw.transcript_path === "string") hook.transcript_path = raw.transcript_path;
+  if (typeof raw.agent_transcript_path === "string") {
+    hook.agent_transcript_path = raw.agent_transcript_path;
+  }
+  if (typeof raw.model === "string") hook.model = raw.model;
+  if (typeof raw.agent_id === "string" || typeof raw.agent_id === "number") {
+    hook.agent_id = raw.agent_id;
+  }
+  if (typeof raw.agent_type === "string") hook.agent_type = raw.agent_type;
+  if (typeof raw.cwd === "string") hook.cwd = raw.cwd;
+  return hook;
+}
 
 // The session-lifecycle state machine. Translates a hook event into agent and
 // transcript-tailer lifecycle: start/end a session, start/stop a subagent, and
