@@ -4,19 +4,30 @@ import type { AgentSnapshot, FileActivity } from "../shared/proc-types.ts";
 
 const RECENT_CAP = 12;
 
-// One robot's worth of state, built from adapter events rather than /proc.
-export type Agent = {
-  id: string;
-  terminal: string;
-  kind: "agent" | "subagent";
-  parent: string | null;
-  tool: string;
-  label: string;
+// Who a robot is: fixed for the life of the agent. Readonly so live-state
+// updates cannot accidentally reassign identity.
+export type AgentIdentity = {
+  readonly id: string;
+  readonly terminal: string;
+  readonly kind: "agent" | "subagent";
+  readonly parent: string | null;
+  readonly tool: string;
+  readonly label: string;
+};
+
+// What a robot is doing right now: mutated as the agent works.
+export type AgentLiveState = {
   activity: FileActivity | null;
   activityTs: number;
   recent: string[];
   contextFraction: number | null;
   lastMessage: string | null;
+};
+
+// One robot's worth of state, built from adapter events rather than /proc.
+export type Agent = {
+  readonly identity: AgentIdentity;
+  readonly live: AgentLiveState;
 };
 
 // What applyActivity resolved, returned so the caller can perform the side
@@ -34,22 +45,32 @@ export function subId(session: string, agentId: unknown): string {
 
 export function toSnapshot(a: Agent): AgentSnapshot {
   return {
-    id: a.id,
-    terminal: a.terminal,
-    kind: a.kind,
-    parent: a.parent,
-    tool: a.tool,
-    label: a.label,
-    activity: a.activity,
-    recent: a.recent,
-    contextFraction: a.contextFraction,
-    lastMessage: a.lastMessage,
+    id: a.identity.id,
+    terminal: a.identity.terminal,
+    kind: a.identity.kind,
+    parent: a.identity.parent,
+    tool: a.identity.tool,
+    label: a.identity.label,
+    activity: a.live.activity,
+    recent: a.live.recent,
+    contextFraction: a.live.contextFraction,
+    lastMessage: a.live.lastMessage,
+  };
+}
+
+function freshLiveState(): AgentLiveState {
+  return {
+    activity: null,
+    activityTs: 0,
+    recent: [],
+    contextFraction: null,
+    lastMessage: null,
   };
 }
 
 function pushRecent(a: Agent, line: string): void {
-  a.recent.unshift(line);
-  if (a.recent.length > RECENT_CAP) a.recent.length = RECENT_CAP;
+  a.live.recent.unshift(line);
+  if (a.live.recent.length > RECENT_CAP) a.live.recent.length = RECENT_CAP;
 }
 
 export class AgentRegistry {
@@ -67,17 +88,15 @@ export class AgentRegistry {
     let a = this.agents.get(session);
     if (!a) {
       a = {
-        id: session,
-        terminal: session,
-        kind: "agent",
-        parent: null,
-        tool,
-        label: tool,
-        activity: null,
-        activityTs: 0,
-        recent: [],
-        contextFraction: null,
-        lastMessage: null,
+        identity: {
+          id: session,
+          terminal: session,
+          kind: "agent",
+          parent: null,
+          tool,
+          label: tool,
+        },
+        live: freshLiveState(),
       };
       this.agents.set(session, a);
     }
@@ -94,17 +113,15 @@ export class AgentRegistry {
     let a = this.agents.get(id);
     if (!a) {
       a = {
-        id,
-        terminal: session,
-        kind: "subagent",
-        parent: session,
-        tool,
-        label,
-        activity: null,
-        activityTs: 0,
-        recent: [],
-        contextFraction: null,
-        lastMessage: null,
+        identity: {
+          id,
+          terminal: session,
+          kind: "subagent",
+          parent: session,
+          tool,
+          label,
+        },
+        live: freshLiveState(),
       };
       this.agents.set(id, a);
     }
@@ -113,7 +130,7 @@ export class AgentRegistry {
 
   removeSession(session: string): void {
     for (const [id, a] of this.agents) {
-      if (a.terminal === session) this.agents.delete(id);
+      if (a.identity.terminal === session) this.agents.delete(id);
     }
   }
 
@@ -128,14 +145,14 @@ export class AgentRegistry {
     const dir = act.filePath ? dirname(act.filePath) : act.cwd;
     if (!dir || !dir.startsWith("/")) return null;
 
-    agent.activity = {
+    agent.live.activity = {
       path: act.filePath ?? dir,
       dir,
       direction: act.direction,
       verb: act.verb,
       outcome: act.outcome,
     };
-    agent.activityTs = now;
+    agent.live.activityTs = now;
     // Log once, at completion (outcome resolved), so the start/end pair is one entry.
     if (act.outcome !== "pending") {
       if (act.filePath) {
@@ -152,7 +169,7 @@ export class AgentRegistry {
 
   expireActivity(now: number, ttlMs: number): void {
     for (const a of this.agents.values()) {
-      if (a.activity && now - a.activityTs > ttlMs) a.activity = null;
+      if (a.live.activity && now - a.live.activityTs > ttlMs) a.live.activity = null;
     }
   }
 

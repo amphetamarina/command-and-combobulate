@@ -98,7 +98,7 @@ describe("http /ingest auth", () => {
       res,
     );
     expect(captured.status).toBe(200);
-    expect(deps.agents.get("t1")?.kind).toBe("agent");
+    expect(deps.agents.get("t1")?.identity.kind).toBe("agent");
   });
 });
 

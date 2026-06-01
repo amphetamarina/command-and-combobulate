@@ -33,16 +33,16 @@ describe("ensureAgent", () => {
   test("creates a main agent with sane defaults", () => {
     const reg = new AgentRegistry();
     const a = reg.ensureAgent("t1", "claude");
-    expect(a.id).toBe("t1");
-    expect(a.terminal).toBe("t1");
-    expect(a.kind).toBe("agent");
-    expect(a.parent).toBeNull();
-    expect(a.tool).toBe("claude");
-    expect(a.label).toBe("claude");
-    expect(a.activity).toBeNull();
-    expect(a.recent).toEqual([]);
-    expect(a.contextFraction).toBeNull();
-    expect(a.lastMessage).toBeNull();
+    expect(a.identity.id).toBe("t1");
+    expect(a.identity.terminal).toBe("t1");
+    expect(a.identity.kind).toBe("agent");
+    expect(a.identity.parent).toBeNull();
+    expect(a.identity.tool).toBe("claude");
+    expect(a.identity.label).toBe("claude");
+    expect(a.live.activity).toBeNull();
+    expect(a.live.recent).toEqual([]);
+    expect(a.live.contextFraction).toBeNull();
+    expect(a.live.lastMessage).toBeNull();
   });
 
   test("is idempotent and returns the same instance", () => {
@@ -50,7 +50,7 @@ describe("ensureAgent", () => {
     const first = reg.ensureAgent("t1", "claude");
     const second = reg.ensureAgent("t1", "codex");
     expect(second).toBe(first);
-    expect(second.tool).toBe("claude");
+    expect(second.identity.tool).toBe("claude");
   });
 });
 
@@ -58,11 +58,11 @@ describe("ensureSubagent", () => {
   test("creates a subagent parented to the session", () => {
     const reg = new AgentRegistry();
     const sub = reg.ensureSubagent("t1", "abc", "claude", "explorer");
-    expect(sub.id).toBe("t1:sub:abc");
-    expect(sub.terminal).toBe("t1");
-    expect(sub.kind).toBe("subagent");
-    expect(sub.parent).toBe("t1");
-    expect(sub.label).toBe("explorer");
+    expect(sub.identity.id).toBe("t1:sub:abc");
+    expect(sub.identity.terminal).toBe("t1");
+    expect(sub.identity.kind).toBe("subagent");
+    expect(sub.identity.parent).toBe("t1");
+    expect(sub.identity.label).toBe("explorer");
   });
 
   test("is idempotent", () => {
@@ -70,7 +70,7 @@ describe("ensureSubagent", () => {
     const first = reg.ensureSubagent("t1", "abc", "claude", "explorer");
     const second = reg.ensureSubagent("t1", "abc", "claude", "other");
     expect(second).toBe(first);
-    expect(second.label).toBe("explorer");
+    expect(second.identity.label).toBe("explorer");
   });
 });
 
@@ -102,14 +102,14 @@ describe("applyActivity", () => {
       filePath: "/repo/src/index.ts",
       direction: "read",
     });
-    expect(a.activity).toEqual({
+    expect(a.live.activity).toEqual({
       path: "/repo/src/index.ts",
       dir: "/repo/src",
       direction: "read",
       verb: "read",
       outcome: "ok",
     });
-    expect(a.activityTs).toBe(5000);
+    expect(a.live.activityTs).toBe(5000);
   });
 
   test("uses cwd when there is no file path", () => {
@@ -121,8 +121,8 @@ describe("applyActivity", () => {
       5000,
     );
     expect(applied).toEqual({ dir: "/repo", filePath: null, direction: "run" });
-    expect(a.activity?.path).toBe("/repo");
-    expect(a.activity?.dir).toBe("/repo");
+    expect(a.live.activity?.path).toBe("/repo");
+    expect(a.live.activity?.dir).toBe("/repo");
   });
 
   test("returns null and does not mutate for a non-absolute dir", () => {
@@ -134,7 +134,7 @@ describe("applyActivity", () => {
       5000,
     );
     expect(applied).toBeNull();
-    expect(a.activity).toBeNull();
+    expect(a.live.activity).toBeNull();
   });
 
   test("logs a recent file action only once the outcome is known", () => {
@@ -142,10 +142,10 @@ describe("applyActivity", () => {
     const a = reg.ensureAgent("t1", "claude");
 
     reg.applyActivity(a, activity({ outcome: "pending" }), 5000);
-    expect(a.recent).toEqual([]);
+    expect(a.live.recent).toEqual([]);
 
     reg.applyActivity(a, activity({ outcome: "ok" }), 5001);
-    expect(a.recent).toEqual(["read index.ts"]);
+    expect(a.live.recent).toEqual(["read index.ts"]);
   });
 
   test("logs an edit for a write and a run for a command", () => {
@@ -163,8 +163,8 @@ describe("applyActivity", () => {
       2,
     );
 
-    expect(a.recent[0]).toBe("run: bun test");
-    expect(a.recent[1]).toBe("edit a.ts");
+    expect(a.live.recent[0]).toBe("run: bun test");
+    expect(a.live.recent[1]).toBe("edit a.ts");
   });
 
   test("caps the recent log at 12 entries, newest first", () => {
@@ -177,8 +177,8 @@ describe("applyActivity", () => {
         i,
       );
     }
-    expect(a.recent.length).toBe(12);
-    expect(a.recent[0]).toBe("read f19.ts");
+    expect(a.live.recent.length).toBe(12);
+    expect(a.live.recent[0]).toBe("read f19.ts");
   });
 });
 
@@ -192,8 +192,8 @@ describe("expireActivity", () => {
 
     reg.expireActivity(10000, 6000);
 
-    expect(stale.activity).toBeNull();
-    expect(fresh.activity).not.toBeNull();
+    expect(stale.live.activity).toBeNull();
+    expect(fresh.live.activity).not.toBeNull();
   });
 });
 
@@ -220,21 +220,27 @@ describe("snapshots", () => {
     });
   });
 
-  test("toSnapshot copies a single agent's fields", () => {
+  test("toSnapshot assembles the wire shape from identity and live state", () => {
     const a: Agent = {
-      id: "t1",
-      terminal: "t1",
-      kind: "agent",
-      parent: null,
-      tool: "claude",
-      label: "claude",
-      activity: null,
-      activityTs: 0,
-      recent: ["read x.ts"],
-      contextFraction: 0.5,
-      lastMessage: "hi",
+      identity: {
+        id: "t1",
+        terminal: "t1",
+        kind: "agent",
+        parent: null,
+        tool: "claude",
+        label: "claude",
+      },
+      live: {
+        activity: null,
+        activityTs: 0,
+        recent: ["read x.ts"],
+        contextFraction: 0.5,
+        lastMessage: "hi",
+      },
     };
     const snap = toSnapshot(a);
+    expect(snap.id).toBe("t1");
+    expect(snap.tool).toBe("claude");
     expect(snap.contextFraction).toBe(0.5);
     expect(snap.lastMessage).toBe("hi");
     expect(snap.recent).toEqual(["read x.ts"]);

@@ -77,7 +77,7 @@ export function createHttpHandler(deps: HttpDeps) {
           const sub = body.agent_id ? agents.get(subId(session, body.agent_id)) : null;
           const target = sub ?? a;
           console.log(
-            `[ingest] -> agent=${target?.id ?? "(none)"} activity=${JSON.stringify(target?.activity ?? null)} workDirs=${workDirs.keys().length}`,
+            `[ingest] -> agent=${target?.identity.id ?? "(none)"} activity=${JSON.stringify(target?.live.activity ?? null)} workDirs=${workDirs.keys().length}`,
           );
         }
         live.agentsChanged();

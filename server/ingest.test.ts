@@ -27,8 +27,8 @@ describe("Ingest session lifecycle", () => {
     const { agents, ingest } = harness();
     ingest.handle("t1", "claude", { hook_event_name: "SessionStart" });
     const a = agents.get("t1");
-    expect(a?.kind).toBe("agent");
-    expect(a?.tool).toBe("claude");
+    expect(a?.identity.kind).toBe("agent");
+    expect(a?.identity.tool).toBe("claude");
   });
 
   test("SessionEnd removes the agent and flags the world dirty", () => {
@@ -57,8 +57,8 @@ describe("Ingest session lifecycle", () => {
       agent_type: "explorer",
     });
     const sub = agents.get(subId("t1", "abc"));
-    expect(sub?.kind).toBe("subagent");
-    expect(sub?.label).toBe("explorer");
+    expect(sub?.identity.kind).toBe("subagent");
+    expect(sub?.identity.label).toBe("explorer");
     expect(transcripts.keys()).toContain(subId("t1", "abc"));
   });
 
@@ -85,7 +85,7 @@ describe("Ingest session lifecycle", () => {
       hook_event_name: "PostToolUse",
       transcript_path: MAIN,
     });
-    expect(agents.get("t1")?.kind).toBe("agent");
+    expect(agents.get("t1")?.identity.kind).toBe("agent");
   });
 
   test("an unknown hook event is a no-op", () => {

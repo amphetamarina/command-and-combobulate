@@ -92,7 +92,7 @@ describe("TranscriptSync.pump", () => {
 
     sync.pump("t1");
 
-    expect(agents.get("t1")?.activity?.path).toBe("/repo/src/index.ts");
+    expect(agents.get("t1")?.live.activity?.path).toBe("/repo/src/index.ts");
     expect(files.isTracked("/repo/src/index.ts")).toBe(true);
     expect(workDirs.keys()).toContain("/repo/src");
     expect(dirty()).toBe(1);
@@ -114,7 +114,7 @@ describe("TranscriptSync.pump", () => {
 
     sync.pump("t1");
 
-    expect(agents.get("t1")?.contextFraction).toBeCloseTo(0.5, 5);
+    expect(agents.get("t1")?.live.contextFraction).toBeCloseTo(0.5, 5);
   });
 
   test("records the agent's last message", () => {
@@ -126,7 +126,7 @@ describe("TranscriptSync.pump", () => {
 
     sync.pump("t1");
 
-    expect(agents.get("t1")?.lastMessage).toBe("working on it");
+    expect(agents.get("t1")?.live.lastMessage).toBe("working on it");
   });
 });
 

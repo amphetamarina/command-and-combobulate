@@ -99,13 +99,13 @@ export class TranscriptSync {
     for (const act of entry.tailer.readNew()) this.apply(agent, act, now);
 
     // Context fill drives the base brownout, which is the main agent's terminal.
-    if (agent.kind === "agent" && entry.tailer.contextTokens !== null) {
-      agent.contextFraction = Math.min(
+    if (agent.identity.kind === "agent" && entry.tailer.contextTokens !== null) {
+      agent.live.contextFraction = Math.min(
         1,
-        entry.tailer.contextTokens / contextWindowFor(this.models.get(agent.terminal)),
+        entry.tailer.contextTokens / contextWindowFor(this.models.get(agent.identity.terminal)),
       );
     }
-    if (entry.tailer.lastMessage !== null) agent.lastMessage = entry.tailer.lastMessage;
+    if (entry.tailer.lastMessage !== null) agent.live.lastMessage = entry.tailer.lastMessage;
   }
 
   private apply(agent: Agent, act: TranscriptActivity, now: number): void {
