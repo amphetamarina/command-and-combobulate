@@ -1,11 +1,11 @@
 {
-  "name": "clanker",
-  "owner": { "name": "Command & Clanker" },
+  "name": "combobulate",
+  "owner": { "name": "Command & Combobulate" },
   "plugins": [
     {
-      "name": "clanker",
-      "source": "./clanker",
-      "description": "Stream Claude Code tool calls and subagents to the Command & Clanker map."
+      "name": "combobulate",
+      "source": "./combobulate",
+      "description": "Stream Claude Code tool calls and subagents to the Command & Combobulate map."
     }
   ]
 }

@@ -1,6 +1,6 @@
-// `bun run setup` — wire the Command & Clanker adapters into the agent CLIs so
+// `bun run setup` — wire the Command & Combobulate adapters into the agent CLIs so
 // you do not have to pass plugin paths by hand. Every adapter only does anything
-// inside a Command & Clanker terminal (where CLANKER_SESSION is injected), so this
+// inside a Command & Combobulate terminal (where COMBOBULATE_SESSION is injected), so this
 // is safe to run once globally. Idempotent.
 //
 //   claude   — a hook in ~/.claude/settings.json.
@@ -12,9 +12,9 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const repo = resolve(import.meta.dirname, "..");
-const claudeHook = resolve(repo, "integrations/claude/clanker/clanker-hook.sh");
+const claudeHook = resolve(repo, "integrations/claude/combobulate/combobulate-hook.sh");
 const codexMarketplace = resolve(repo, "integrations/codex");
-const codexHook = resolve(repo, "integrations/codex/plugins/clanker/clanker-hook.sh");
+const codexHook = resolve(repo, "integrations/codex/plugins/combobulate/combobulate-hook.sh");
 const home = homedir();
 
 const CLAUDE_EVENTS = [
@@ -26,9 +26,9 @@ const CLAUDE_EVENTS = [
 ];
 
 // Hook commands left by this or a previous install. Re-running setup strips
-// these before re-adding, so entries never stack. "aiso-hook.sh" is the
-// pre-rebrand name and is cleaned up here too.
-const STALE_HOOK_NAMES = ["clanker-hook.sh", "aiso-hook.sh"];
+// these before re-adding, so entries never stack. "clanker-hook.sh" and
+// "aiso-hook.sh" are earlier pre-rebrand names and are cleaned up here too.
+const STALE_HOOK_NAMES = ["combobulate-hook.sh", "clanker-hook.sh", "aiso-hook.sh"];
 
 function has(cmd: string): boolean {
   return spawnSync("sh", ["-c", `command -v ${cmd}`], { stdio: "ignore" }).status === 0;
@@ -68,20 +68,20 @@ async function installCodex(): Promise<string> {
     stdio: "ignore",
     timeout: 30000,
   });
-  spawnSync("codex", ["plugin", "add", "clanker@clanker"], {
+  spawnSync("codex", ["plugin", "add", "combobulate@combobulate"], {
     stdio: "ignore",
     timeout: 30000,
   });
-  return "added clanker@clanker (trust its hooks in Codex on first use)";
+  return "added combobulate@combobulate (trust its hooks in Codex on first use)";
 }
 
 const claude = await installClaude();
 const codex = await installCodex();
 
-console.log("Command & Clanker adapters installed:");
+console.log("Command & Combobulate adapters installed:");
 console.log(`  Claude hooks    -> ${claude}`);
 console.log(`  Codex plugin    -> ${codex}`);
 console.log(
-  "They only report inside Command & Clanker terminals (CLANKER_SESSION is",
+  "They only report inside Command & Combobulate terminals (COMBOBULATE_SESSION is",
 );
 console.log("injected there), so they stay quiet everywhere else. Run an agent and watch the map.");
