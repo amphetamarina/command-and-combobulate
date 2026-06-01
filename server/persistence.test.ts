@@ -7,14 +7,14 @@ import { buildWorld, emptyCache, type TerminalInfo } from "./world-builder.ts";
 
 const term = (id: string): TerminalInfo => ({ id, label: id });
 
-const path = join(tmpdir(), `clanker-cache-${process.pid}-${Date.now()}.json`);
+const path = join(tmpdir(), `combobulate-cache-${process.pid}-${Date.now()}.json`);
 
 afterEach(async () => {
   await rm(path, { force: true });
 });
 
 test("returns an empty cache when the file is missing", async () => {
-  const cache = await loadCache(join(tmpdir(), "clanker-does-not-exist.json"));
+  const cache = await loadCache(join(tmpdir(), "combobulate-does-not-exist.json"));
   expect(cache.region.size).toBe(0);
   expect(cache.building.size).toBe(0);
   expect(cache.freeRegionSlots).toEqual([]);

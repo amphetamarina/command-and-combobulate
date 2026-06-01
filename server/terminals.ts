@@ -173,10 +173,10 @@ export class TerminalManager {
     // The agent's adapter reads these to tag its events with this island and
     // reach the ingest endpoint.
     const env = {
-      CLANKER_SESSION: id,
-      CLANKER_INGEST: this.ingest.url,
-      CLANKER_TOKEN: this.ingest.token,
-      CLANKER_PATH: this.ingest.pluginDir,
+      COMBOBULATE_SESSION: id,
+      COMBOBULATE_INGEST: this.ingest.url,
+      COMBOBULATE_TOKEN: this.ingest.token,
+      COMBOBULATE_PATH: this.ingest.pluginDir,
     };
     this.terminals.set(
       id,

@@ -83,7 +83,7 @@ describe("FileRegistry", () => {
 describe("FileRegistry size", () => {
   let dir: string;
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), "clanker-files-"));
+    dir = mkdtempSync(join(tmpdir(), "combobulate-files-"));
   });
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true });

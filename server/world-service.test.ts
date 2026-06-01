@@ -17,7 +17,7 @@ function fakeTerminals(refs: { id: string; pid: number }[]): TerminalManager {
 describe("WorldService", () => {
   let dir: string;
   beforeAll(() => {
-    dir = mkdtempSync(join(tmpdir(), "clanker-world-"));
+    dir = mkdtempSync(join(tmpdir(), "combobulate-world-"));
   });
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true });

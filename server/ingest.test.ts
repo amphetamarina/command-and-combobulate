@@ -20,7 +20,7 @@ function harness() {
   return { agents, transcripts, ingest, dirty: () => dirty };
 }
 
-const MAIN = "/tmp/clanker-test-main.jsonl";
+const MAIN = "/tmp/combobulate-test-main.jsonl";
 
 describe("Ingest session lifecycle", () => {
   test("SessionStart creates a main agent", () => {
