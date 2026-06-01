@@ -10,7 +10,7 @@ import type { AgentSnapshot, FileActivity, FileEntry, FolderFiles } from "./proc
 // C# [JsonPropertyName] is added (and vice versa).
 const LIVE_MESSAGE_CS = resolve(
   import.meta.dir,
-  "../command-and-clanker/OpenRA.Mods.Clanker/Protocol/LiveMessage.cs",
+  "../command-and-combobulate/OpenRA.Mods.Combobulate/Protocol/LiveMessage.cs",
 );
 
 // Parse the C# model into { className: [jsonPropertyName, ...] } by reading the

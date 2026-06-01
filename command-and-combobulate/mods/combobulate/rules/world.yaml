@@ -1,0 +1,7 @@
+World:
+	CombobulateBridge:
+	CombobulateSidebarLoader:
+	LoadWidgetAtGameStart:
+		ShellmapRoot: COMBOBULATE_MAINMENU
+	MapOptions:
+		TechLevel: unrestricted
