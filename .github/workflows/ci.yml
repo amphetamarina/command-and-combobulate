@@ -53,11 +53,11 @@ jobs:
       - name: Cache OpenRA engine
         uses: actions/cache@v4
         with:
-          path: command-and-clanker/engine
-          key: openra-engine-${{ runner.os }}-${{ hashFiles('command-and-clanker/mod.config') }}
+          path: command-and-combobulate/engine
+          key: openra-engine-${{ runner.os }}-${{ hashFiles('command-and-combobulate/mod.config') }}
           restore-keys: |
             openra-engine-${{ runner.os }}-
 
       - name: Build mod
-        working-directory: command-and-clanker
+        working-directory: command-and-combobulate
         run: make

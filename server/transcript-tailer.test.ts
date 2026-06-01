@@ -8,7 +8,7 @@ let dir: string;
 let path: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "clanker-tail-"));
+  dir = mkdtempSync(join(tmpdir(), "combobulate-tail-"));
   path = join(dir, "session.jsonl");
 });
 

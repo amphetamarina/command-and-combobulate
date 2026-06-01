@@ -26,7 +26,7 @@ function harness() {
     { refs: () => [] } as unknown as TerminalManager,
     new WorkDirTracker(),
     emptyCache(),
-    "/tmp/clanker-live-test-cache.json",
+    "/tmp/combobulate-live-test-cache.json",
   );
   return { agents, files, broadcaster: new Broadcaster(agents, files, worldService) };
 }

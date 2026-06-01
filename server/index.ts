@@ -17,13 +17,13 @@ const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
 const ACTIVITY_TTL_MS = 6000;
 const CACHE_PATH =
-  process.env.CLANKER_CACHE ?? join(process.cwd(), ".clanker-cache.json");
-const INGEST_TOKEN = process.env.CLANKER_TOKEN ?? randomUUID();
+  process.env.COMBOBULATE_CACHE ?? join(process.cwd(), ".combobulate-cache.json");
+const INGEST_TOKEN = process.env.COMBOBULATE_TOKEN ?? randomUUID();
 
-// Absolute path to the Claude plugin dir, injected as CLANKER_PATH and used as
-// `claude --plugin-dir $CLANKER_PATH`.
+// Absolute path to the Claude plugin dir, injected as COMBOBULATE_PATH and used as
+// `claude --plugin-dir $COMBOBULATE_PATH`.
 const INTEGRATIONS = resolve(import.meta.dirname, "..", "integrations");
-const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "clanker");
+const PLUGIN_DIR = resolve(INTEGRATIONS, "claude", "combobulate");
 
 const placements = await loadCache(CACHE_PATH);
 const knownTerminals = new Set<string>();

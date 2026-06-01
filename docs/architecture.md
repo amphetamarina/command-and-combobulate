@@ -1,37 +1,37 @@
 # Architecture
 
-Command & Clanker is two pieces: a Node **backend** that ingests agent activity and
+Command & Combobulate is two pieces: a Node **backend** that ingests agent activity and
 owns the real terminals, and an **OpenRA mod** that renders that activity inside the
 OpenRA engine. The world is event-driven — agents report their tool calls; nothing
 scrapes `/proc`.
 
 ```
-   Agent (Claude Code, Codex) in a Command & Clanker terminal
+   Agent (Claude Code, Codex) in a Command & Combobulate terminal
             |  adapter POSTs tool calls / lifecycle events
             v
    Node backend (server/)
      - POST /ingest: normalize agent events -> agents + folder regions
      - world builder: terminal + folder regions (a directory forest)
-     - TerminalManager: real PTYs via node-pty; injects CLANKER_* into the shell;
+     - TerminalManager: real PTYs via node-pty; injects COMBOBULATE_* into the shell;
        a headless xterm resolves each PTY into a screen grid
             |
    WebSocket: /live (agents + world deltas + files) and /termview (screen grids)
             v
-   OpenRA mod (command-and-clanker/)
-     - ClankerBridge (world trait): connect on a background thread, apply deltas
+   OpenRA mod (command-and-combobulate/)
+     - CombobulateBridge (world trait): connect on a background thread, apply deltas
        on the game thread -> terminal buildings, folder walls, file buildings,
        agent units, fog
-     - ClankerTerminalWidget: a live, interactive terminal panel
+     - CombobulateTerminalWidget: a live, interactive terminal panel
      - Start menu: "Start Clanking" boots straight into the canvas map
 ```
 
 ## How an agent reaches the map
 
-Building a Terminal spawns a shell with `CLANKER_SESSION` (the terminal id),
-`CLANKER_INGEST` (the ingest URL), and `CLANKER_TOKEN`. An agent launched there runs
-a Command & Clanker adapter (see `integrations/`) that POSTs each tool call to
+Building a Terminal spawns a shell with `COMBOBULATE_SESSION` (the terminal id),
+`COMBOBULATE_INGEST` (the ingest URL), and `COMBOBULATE_TOKEN`. An agent launched there runs
+a Command & Combobulate adapter (see `integrations/`) that POSTs each tool call to
 `/ingest`, authorized by the token and tagged with the session via
-`X-Clanker-Session` (and the tool via `X-Clanker-Tool`).
+`X-Combobulate-Session` (and the tool via `X-Combobulate-Tool`).
 
 ## Filesystem → map
 
@@ -101,10 +101,10 @@ Two layers of placement caching keep the map calm:
   fills the gap nearest the origin instead of pushing everything outward.
 - Inside a folder, child order is `dirs.sort()` and the grid shape is a
   function of the child count, so adding a child only reshapes that subtree.
-- The mod (`ClankerBridge`) lays files inside `fileArea` keyed by stable rows
+- The mod (`CombobulateBridge`) lays files inside `fileArea` keyed by stable rows
   so an evicted file's neighbours do not slide.
 
-Cache state is persisted to `.clanker-cache.json` (`server/persistence.ts`)
+Cache state is persisted to `.combobulate-cache.json` (`server/persistence.ts`)
 so slots survive a backend restart.
 
 ### Wire-level summary
@@ -145,7 +145,7 @@ TTL eviction + terminal sync). It holds no domain logic of its own.
 - **World builder** (`server/world-builder.ts`): a pure function of the live
   terminals and touched folders, producing terminal regions and a nested folder
   forest. `WorldService` (`server/world-service.ts`) wraps it with the
-  `PlacementCache` (`server/persistence.ts`, `.clanker-cache.json`) that keeps
+  `PlacementCache` (`server/persistence.ts`, `.combobulate-cache.json`) that keeps
   positions stable across restarts.
 - **Broadcaster** (`server/live.ts`): owns the connected `/live` clients and
   turns registry/world state into the `agents`, `world-delta`, and `files` wire
@@ -158,7 +158,7 @@ TTL eviction + terminal sync). It holds no domain logic of its own.
 
 ### HTTP / WebSocket surface
 
-- `POST /ingest` — agent events (token in `Authorization`, ids in `X-Clanker-*`).
+- `POST /ingest` — agent events (token in `Authorization`, ids in `X-Combobulate-*`).
 - `GET /world` — one-shot world snapshot.
 - `POST /term/new`, `POST /term/kill` — terminal lifecycle.
 - `WS /term?id=` — raw PTY byte stream (`{i}` input, `{r:[c,r]}` resize).
@@ -166,23 +166,23 @@ TTL eviction + terminal sync). It holds no domain logic of its own.
 - `POST /agent/freeze|unfreeze|interrupt|ask` — drive the agent's process.
 - `WS /live` — `agents`, `world-delta`, and `files` on each tick and on change.
 
-## OpenRA mod (command-and-clanker/)
+## OpenRA mod (command-and-combobulate/)
 
 Built on the OpenRA Mod SDK: `make` fetches the pinned engine (`mod.config`
-`ENGINE_VERSION`) and builds `OpenRA.Mods.Clanker` against it.
+`ENGINE_VERSION`) and builds `OpenRA.Mods.Combobulate` against it.
 
-- **ClankerBridge** (`Traits/ClankerBridge.cs`, on the World actor): runs the
+- **CombobulateBridge** (`Traits/CombobulateBridge.cs`, on the World actor): runs the
   `/live` WebSocket on a background thread that only enqueues messages; all
   World/Actor/resource changes happen on the game thread via `AddFrameEndTask`.
   It turns regions into terminal buildings and folder walls (laid out as a stable
   nested compounds), files into fog-hidden civilian buildings, and agents into units that drive to
   the folder they are working in. It also consumes `/termview` and forwards
   keystrokes back to the PTY.
-- **ClankerTerminalWidget** (`Widgets/`): paints the screen grid in a monospace
+- **CombobulateTerminalWidget** (`Widgets/`): paints the screen grid in a monospace
   font and routes keystrokes to the selected terminal — a live, interactive
   terminal inside the game.
-- **Mod files** (`mods/clanker/`): rules, sequences, chrome, fluent, and the
-  `clanker-canvas` sandbox map; reuses OpenRA's Red Alert art.
+- **Mod files** (`mods/combobulate/`): rules, sequences, chrome, fluent, and the
+  `combobulate-canvas` sandbox map; reuses OpenRA's Red Alert art.
 
 ## Wire shapes
 
@@ -217,12 +217,12 @@ type AgentSnapshot = {
 ```
 
 These TS wire types live in `shared/proc-types.ts` and `shared/types.ts` and are
-hand-mirrored in the C# mod's `OpenRA.Mods.Clanker/Protocol/LiveMessage.cs`.
+hand-mirrored in the C# mod's `OpenRA.Mods.Combobulate/Protocol/LiveMessage.cs`.
 `shared/wire-contract.test.ts` fails the test run if the two ever drift.
 
 ## Determinism
 
 Folder and terminal positions are deterministic: the backend's `PlacementCache`
-assigns stable slots (persisted to `.clanker-cache.json`), and the mod lays
+assigns stable slots (persisted to `.combobulate-cache.json`), and the mod lays
 folders out as a stable indented tree keyed by recycled rows, so the map does not
 reshuffle as folders come and go.

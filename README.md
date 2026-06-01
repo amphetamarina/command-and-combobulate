@@ -1,5 +1,5 @@
-# Command & Clanker
-<img width="512" height="256" alt="clanker-loadscreen" src="https://github.com/user-attachments/assets/61281ddd-34d0-4cf6-9692-9d8deeaeb24f" />
+# Command & Combobulate
+<img width="512" height="256" alt="Command & Combobulate" src="assets/loadscreen.png" />
 
 <video width="1280" height="720" src="assets/demo002.mp4" controls></video>
 
@@ -14,7 +14,7 @@ It is two pieces:
 - **`server/`** — a small Node backend. Agent adapters POST their tool calls to it,
   and it hosts the real terminals (`node-pty`). It streams a live world and terminal
   I/O over WebSocket.
-- **`command-and-clanker/`** — an [OpenRA Mod SDK](https://github.com/OpenRA/OpenRAModSDK)
+- **`command-and-combobulate/`** — an [OpenRA Mod SDK](https://github.com/OpenRA/OpenRAModSDK)
   mod that connects to the backend and renders that world inside the OpenRA engine.
 
 ## Prerequisites
@@ -37,7 +37,7 @@ In a second shell, build and launch the mod. The first `make` fetches the pinned
 OpenRA engine and builds it (a few minutes):
 
 ```sh
-cd command-and-clanker
+cd command-and-combobulate
 make                 # fetch engine + build the mod
 ./launch-game.sh     # launch
 ```
@@ -54,7 +54,7 @@ claude        # also: codex
 
 The agent appears as a unit and starts working the map. Scout outward to reveal
 what other agents are doing. The adapters only report from inside a Command &
-Clanker terminal (where `CLANKER_SESSION` is injected), so they stay quiet
+Combobulate terminal (where `COMBOBULATE_SESSION` is injected), so they stay quiet
 everywhere else.
 
 ## What you see
@@ -71,8 +71,8 @@ everywhere else.
 ## Layout
 
 - `server/` — the backend (event ingest + PTY hosting).
-- `command-and-clanker/` — the OpenRA mod: SDK scaffold, `mods/clanker/` (yaml,
-  art, maps) and `OpenRA.Mods.Clanker/` (C# traits and widgets).
+- `command-and-combobulate/` — the OpenRA mod: SDK scaffold, `mods/combobulate/` (yaml,
+  art, maps) and `OpenRA.Mods.Combobulate/` (C# traits and widgets).
 - `integrations/` — the Claude and Codex adapters installed by `bun run setup`.
 - `docs/` — design notes.
 

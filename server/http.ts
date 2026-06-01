@@ -57,22 +57,22 @@ export function createHttpHandler(deps: HttpDeps) {
       if (req.headers["authorization"] !== `Bearer ${ingestToken}`) {
         return sendJson(res, 401, { ok: false });
       }
-      const session = String(req.headers["x-clanker-session"] ?? "");
-      const tool = String(req.headers["x-clanker-tool"] ?? "claude");
+      const session = String(req.headers["x-combobulate-session"] ?? "");
+      const tool = String(req.headers["x-combobulate-tool"] ?? "claude");
       let body: ClaudeHook = {};
       try {
         body = parseHook(await readBody(req)) ?? {};
       } catch {
         /* ignore malformed */
       }
-      if (process.env.CLANKER_DEBUG_INGEST) {
+      if (process.env.COMBOBULATE_DEBUG_INGEST) {
         console.log(
           `[ingest] tool=${tool} session=${session} body=${JSON.stringify(body)}`,
         );
       }
       if (session) {
         sessions.handle(session, tool, body);
-        if (process.env.CLANKER_DEBUG_INGEST) {
+        if (process.env.COMBOBULATE_DEBUG_INGEST) {
           const a = agents.get(session);
           const sub = body.agent_id ? agents.get(subId(session, body.agent_id)) : null;
           const target = sub ?? a;

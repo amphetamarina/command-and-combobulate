@@ -1,0 +1,12 @@
+{
+  "name": "command-and-combobulate-mod",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Command & Combobulate OpenRA mod (built on the OpenRA Mod SDK).",
+  "scripts": {
+    "build": "make",
+    "launch": "./launch-game.sh",
+    "game": "make && ./launch-game.sh",
+    "utility": "./utility.sh combobulate"
+  }
+}

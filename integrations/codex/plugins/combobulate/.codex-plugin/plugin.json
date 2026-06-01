@@ -1,0 +1,7 @@
+{
+  "name": "combobulate",
+  "description": "Stream Codex tool calls and lifecycle events to the Command & Combobulate map.",
+  "version": "0.1.0",
+  "hooks": "./hooks/hooks.json",
+  "author": { "name": "Command & Combobulate" }
+}

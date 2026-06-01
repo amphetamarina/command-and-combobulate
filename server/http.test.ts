@@ -50,7 +50,7 @@ function harness(terminals?: Partial<TerminalManager>): HttpDeps {
     { refs: () => [] } as unknown as TerminalManager,
     workDirs,
     emptyCache(),
-    "/tmp/clanker-http-test-cache.json",
+    "/tmp/combobulate-http-test-cache.json",
   );
   return {
     ingestToken: TOKEN,
@@ -90,8 +90,8 @@ describe("http /ingest auth", () => {
       fakeReq("POST", "/ingest", {
         headers: {
           authorization: `Bearer ${TOKEN}`,
-          "x-clanker-session": "t1",
-          "x-clanker-tool": "claude",
+          "x-combobulate-session": "t1",
+          "x-combobulate-tool": "claude",
         },
         body: JSON.stringify({ hook_event_name: "SessionStart" }),
       }),

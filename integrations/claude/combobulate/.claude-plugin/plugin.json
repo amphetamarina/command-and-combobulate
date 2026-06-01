@@ -1,0 +1,6 @@
+{
+  "name": "combobulate",
+  "description": "Stream Claude Code tool calls and subagent activity to the Command & Combobulate map.",
+  "version": "0.1.0",
+  "author": { "name": "Command & Combobulate" }
+}

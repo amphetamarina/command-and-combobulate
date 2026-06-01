@@ -1,7 +1,0 @@
-World:
-	ClankerBridge:
-	ClankerSidebarLoader:
-	LoadWidgetAtGameStart:
-		ShellmapRoot: CLANKER_MAINMENU
-	MapOptions:
-		TechLevel: unrestricted
