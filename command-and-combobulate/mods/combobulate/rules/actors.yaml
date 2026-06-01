@@ -89,8 +89,8 @@ combobulate.subagent:
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFE066
 
-# One small civilian house per touched file. The label (file name + size) shows
-# only while the house is selected, so the commander clicks one to inspect it.
+# One small civilian house per touched file. The label (file name + size) is
+# always shown so every touched file is named in-world without clicking.
 combobulate.file1:
 	Inherits: V05
 	RenderSprites:
@@ -98,7 +98,7 @@ combobulate.file1:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -109,7 +109,7 @@ combobulate.file2:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -120,7 +120,7 @@ combobulate.file3:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -131,7 +131,7 @@ combobulate.file4:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -142,7 +142,7 @@ combobulate.file5:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -153,7 +153,7 @@ combobulate.file6:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -164,7 +164,7 @@ combobulate.file7:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -181,7 +181,7 @@ combobulate.file.test:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -195,7 +195,7 @@ combobulate.file.config:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -209,7 +209,7 @@ combobulate.file.manifest:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -223,7 +223,7 @@ combobulate.file.docs:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
 
@@ -237,6 +237,6 @@ combobulate.file.build:
 	CombobulateLabel:
 		Font: TinyBold
 		Position: Top
-		RequiresSelection: true
+		RequiresSelection: false
 		ValidRelationships: Ally, Neutral, Enemy
 		Color: FFFFFF
