@@ -21,7 +21,6 @@ namespace OpenRA.Mods.Clanker.Widgets
 		public readonly Color Background = Color.FromArgb(235, 12, 14, 16);
 		public readonly Color Foreground = Color.FromArgb(220, 220, 220);
 
-		readonly World world;
 		readonly ClankerBridge bridge;
 		int lastResizeCols;
 		int lastResizeRows;
@@ -29,24 +28,7 @@ namespace OpenRA.Mods.Clanker.Widgets
 		[ObjectCreator.UseCtor]
 		public ClankerTerminalWidget(World world)
 		{
-			this.world = world;
 			bridge = world.WorldActor.TraitOrDefault<ClankerBridge>();
-		}
-
-		// The selected terminal island's backend id, or null if none is selected.
-		string SelectedTerminal()
-		{
-			foreach (var a in world.Selection.Actors)
-			{
-				if (!a.IsInWorld)
-					continue;
-
-				var r = a.TraitOrDefault<ClankerTerminalRef>();
-				if (r != null)
-					return r.TerminalId;
-			}
-
-			return null;
 		}
 
 		// Pixel size of one character cell, taken from the font's own metrics.
@@ -62,9 +44,9 @@ namespace OpenRA.Mods.Clanker.Widgets
 			if (bridge == null)
 				return;
 
-			// With no separate sidebar, the panel follows the selection itself.
-			bridge.SetStreamedTerminal(SelectedTerminal());
-
+			// The panel binding is driven by ClankerTerminalLogic; here we only keep
+			// the streamed PTY sized to the grid. With no streamed terminal (the
+			// panel is dismissed or showing the All view) there is nothing to size.
 			if (string.IsNullOrEmpty(bridge.StreamedTerminal))
 			{
 				if (HasKeyboardFocus)
@@ -92,7 +74,7 @@ namespace OpenRA.Mods.Clanker.Widgets
 
 		public override void Draw()
 		{
-			if (string.IsNullOrEmpty(bridge?.StreamedTerminal))
+			if (bridge == null)
 				return;
 
 			var font = Game.Renderer.Fonts[Font];
@@ -101,6 +83,15 @@ namespace OpenRA.Mods.Clanker.Widgets
 
 			var ox = rb.X + Padding;
 			var oy = rb.Y + Padding;
+
+			// The All view has no single PTY to mirror; show what the composer targets.
+			if (bridge.BoundTerminal == ClankerBridge.AllTerminals)
+			{
+				font.DrawTextWithContrast(
+					$"All terminals — input broadcasts to {bridge.TerminalIds.Count} agent(s)",
+					new float2(ox, oy), Foreground, Color.Black, 1);
+				return;
+			}
 
 			var grid = bridge.TerminalGrid;
 			if (grid == null)
